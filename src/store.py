@@ -18,7 +18,8 @@ CREATE TABLE IF NOT EXISTS fare_snapshots (
     stops INTEGER,
     duration_min INTEGER,
     dep_time TEXT,
-    arr_time TEXT
+    arr_time TEXT,
+    stops_detail TEXT              -- JSON [{"airport": ..., "minutes": ...}] per layover
 );
 CREATE INDEX IF NOT EXISTS idx_snap_query
     ON fare_snapshots (leg, origin, dest, dep_date, sweep_id);
@@ -30,6 +31,12 @@ def connect(db_path: str) -> sqlite3.Connection:
     con = sqlite3.connect(db_path)
     con.row_factory = sqlite3.Row
     con.executescript(SCHEMA)
+    # Idempotent migration for databases created before stops_detail existed
+    # (CREATE TABLE IF NOT EXISTS does not add columns to an existing table).
+    cols = {r[1] for r in con.execute("PRAGMA table_info(fare_snapshots)")}
+    if "stops_detail" not in cols:
+        con.execute("ALTER TABLE fare_snapshots ADD COLUMN stops_detail TEXT")
+        con.commit()
     return con
 
 
@@ -37,13 +44,15 @@ def insert_offers(con, sweep_id, source, leg, origin, dest, dep_date, offers):
     rows = [
         (sweep_id, source, leg, origin, dest, dep_date, rank,
          o["price"], o["currency"], o.get("carrier"), o.get("stops"),
-         o.get("duration_min"), o.get("dep_time"), o.get("arr_time"))
+         o.get("duration_min"), o.get("dep_time"), o.get("arr_time"),
+         o.get("stops_detail"))
         for rank, o in enumerate(offers)
     ]
     con.executemany(
         "INSERT INTO fare_snapshots (sweep_id, source, leg, origin, dest, dep_date,"
-        " rank, price, currency, carrier, stops, duration_min, dep_time, arr_time)"
-        " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)", rows)
+        " rank, price, currency, carrier, stops, duration_min, dep_time, arr_time,"
+        " stops_detail)"
+        " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", rows)
     con.commit()
 
 

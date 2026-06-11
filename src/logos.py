@@ -79,6 +79,11 @@ def _to_code(name):
     n = name.strip().lower()
     if n in IATA:
         return IATA[n]
+    # Sources are inconsistent about suffixes ("American" vs "American
+    # Airlines"); normalize before giving up on a real logo.
+    stripped = " ".join(w for w in n.split() if w not in ("airlines", "airways", "air lines"))
+    if stripped in IATA:
+        return IATA[stripped]
     if len(name.strip()) == 2 and name.strip().isupper():
         return name.strip()  # already an IATA code
     return None

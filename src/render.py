@@ -37,6 +37,14 @@ TEMPLATE = """<!DOCTYPE html>
   .lwhen { font-size:12.5px; color:var(--dim); white-space:nowrap; overflow:hidden;
            text-overflow:ellipsis; }
   .lprice { font-size:14px; text-align:right; white-space:nowrap; }
+  .chip { cursor:pointer; border-bottom:1px dashed var(--dim); }
+  .chip:hover { color:var(--text); }
+  .lay { grid-column:1/-1; display:none; align-items:center; gap:7px; flex-wrap:wrap;
+         font-size:12px; color:var(--dim); padding:1px 2px 6px 56px; }
+  .lay.open { display:flex; }
+  .lay .seg { flex:0 0 24px; height:2px; background:var(--line2); border-radius:1px; }
+  .lay b { color:var(--text); font-weight:600; }
+  .lay i { font-style:normal; color:var(--accent); margin-left:-3px; }
   .als { display:inline-flex; align-items:center; padding-left:5px; }
   img.al, .als svg { width:24px; height:24px; }
   img.al { border-radius:50%; background:#fff; object-fit:contain; padding:2px;
@@ -150,12 +158,36 @@ const winflag = r => {
            : `<span class="flag-warn">? time unverified (${label})</span>`;
 };
 
-const legRow = (route, r, extra='') => `
+const fmtMin = n => (n >= 60 ? Math.floor(n/60) + 'h ' : '') + (n % 60 ? (n % 60) + 'm' : '').trim();
+// stops as text, or as a toggle chip revealing the layover strip when the
+// sweep captured layover detail from the rendered Google Flights page
+const stopsBit = r => {
+  if (r.stops == null) return '';
+  if (r.stops === 0) return ' · nonstop';
+  const label = `${r.stops} stop${r.stops == 1 ? '' : 's'}`;
+  return (r.stops_detail && r.stops_detail.length)
+    ? ` · <span class="chip" onclick="toggleLay(this)" title="show layovers">${label} ▾</span>`
+    : ` · ${label}`;
+};
+const layStrip = r => {
+  if (!r.stops_detail || !r.stops_detail.length) return '';
+  const mid = r.stops_detail.map(d =>
+    `<span class="seg"></span> <b>${d.airport}</b> <i>${d.minutes ? fmtMin(d.minutes) : ''}</i>`).join(' ');
+  return `<div class="lay">${r.origin} ${mid} <span class="seg"></span> ${r.dest}</div>`;
+};
+window.toggleLay = el => {
+  const lay = el.closest('.lrow').querySelector('.lay');
+  if (!lay) return;
+  const open = lay.classList.toggle('open');
+  el.innerHTML = el.innerHTML.replace(open ? '▾' : '▴', open ? '▴' : '▾');
+};
+const legRow = (route, r) => `
   <div class="lrow">
     ${logos(r.carrier)}
     <span class="lroute">${route}</span>
-    <span class="lwhen" title="${r.carrier||''}">${mdate(r.dep_date)}${dtime(r)}${extra}${stale(r)}</span>
+    <span class="lwhen" title="${r.carrier||''}">${mdate(r.dep_date)}${dtime(r)}${stopsBit(r)}${stale(r)}</span>
     <span class="lprice">${plink(r, `<b>${fmt(r.price)}</b>`)}</span>
+    ${layStrip(r)}
   </div>`;
 
 document.getElementById('cards').innerHTML = D.itineraries.map((it,i) => {
@@ -174,7 +206,7 @@ document.getElementById('cards').innerHTML = D.itineraries.map((it,i) => {
     <div class="signals">${signals}</div>
     <div class="lrows">
       ${legRow('PDX→DFW', it.outbound)}
-      ${legRow('DFW→'+it.code, ta, ` · ${ta.stops??'?'} stop${ta.stops==1?'':'s'}`)}
+      ${legRow('DFW→'+it.code, ta)}
       ${legRow('BOD→PDX', it.home)}
     </div>
     <div class="meta" title="${it.route}">~${it.weather_c}°C late Oct · ${it.drive_hours}h drive ·
@@ -205,7 +237,7 @@ document.getElementById('tbl-ta').innerHTML =
     const hist = D.history[hkey('transatlantic', r.origin, r.dest, r.dep_date)];
     const gf = D.gflights[hkey('transatlantic', r.origin, r.dest, r.dep_date)];
     return `<tr><td>${it.city} (${it.code})${stale(r)}</td><td>${r.dep_date}</td><td>${ampm((r.dep_time||'').slice(11,16))||'—'}</td><td class="cair">${logos(r.carrier)}${r.carrier||'—'}</td>`+
-      `<td class="num">${r.stops??'—'}</td>`+
+      `<td class="num"${r.stops_detail && r.stops_detail.length ? ` title="${r.stops_detail.map(d=>d.airport+(d.minutes?' '+fmtMin(d.minutes):'')).join(' · ')}"` : ''}>${r.stops??'—'}</td>`+
       `<td>${r.duration_min?Math.floor(r.duration_min/60)+'h'+String(r.duration_min%60).padStart(2,'0'):'—'}</td>`+
       `<td class="num">${plink(r, `<b>${fmt(r.price)}</b>`)}</td>`+
       `<td class="num gf">${gf?fmt(gf.price):'—'}</td><td>${spark(hist)}</td></tr>`;

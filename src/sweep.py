@@ -10,6 +10,7 @@ Usage:
 """
 import argparse
 import datetime
+import json
 import os
 from pathlib import Path
 
@@ -163,6 +164,17 @@ def main():
     trav = cfg["travelers"]
     for (leg, o, d, dt), offer in best_now.items():
         offer["gf_url"] = links.gf_link(o, d, dt, trav["adults"], trav["children"])
+        if isinstance(offer.get("stops_detail"), str):
+            # stored as JSON text; the dashboard wants the structure. Names are
+            # re-shortened here so rows stored before a parser improvement
+            # still render with the current display rules.
+            from .gflights import _shorten_airport
+            try:
+                offer["stops_detail"] = [
+                    {**d, "airport": _shorten_airport(d["airport"])}
+                    for d in json.loads(offer["stops_detail"])]
+            except (ValueError, KeyError, TypeError):
+                offer["stops_detail"] = None
     if best_now and not any(o.get("gf_url") for o in best_now.values()):
         # gf_link degrades to None per-offer (links are decoration), but ALL of
         # them missing means fast-flights is not importable; say so loudly
