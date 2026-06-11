@@ -1,4 +1,4 @@
-# wedding-flights
+# flight-sweep
 
 Automated price tracking + itinerary optimization for the October 2026 Bordeaux
 wedding trip, so nobody has to brute-force Google Flights by hand.

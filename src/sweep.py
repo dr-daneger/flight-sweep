@@ -125,6 +125,8 @@ def main():
     ap.add_argument("--mock", action="store_true", help="shorthand for --source mock")
     ap.add_argument("--spot-check", type=int, default=0, metavar="N",
                     help="Google-Flights-check the top N entry cities")
+    ap.add_argument("--render-only", action="store_true",
+                    help="rebuild the dashboard from existing data, no fetching")
     ap.add_argument("--config", default=str(ROOT / "config.yaml"))
     ap.add_argument("--db", default=str(ROOT / "data" / "prices.sqlite"))
     ap.add_argument("--out", default=str(ROOT / "docs" / "index.html"))
@@ -133,17 +135,25 @@ def main():
     cfg = yaml.safe_load(Path(args.config).read_text())
     normalize_legs(cfg)
     con = store.connect(args.db)
-    sweep_id = datetime.datetime.now(datetime.UTC).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
     mode = "mock" if args.mock else args.source
-    sources = pick_sources(mode, cfg)
-    source = "+".join(name for name, _ in sources)
     # mock history stays separate from real data sharing the same db
     rank_sources = ("mock",) if mode == "mock" else ("amadeus", "gflights")
 
-    print(f"Sweep {sweep_id} ({source})")
-    fetch_all(cfg, sources, con, sweep_id)
-
-    ids = store.sweep_ids(con, rank_sources)
+    if args.render_only:
+        ids = store.sweep_ids(con, rank_sources)
+        if not ids:
+            raise SystemExit("no sweeps in the database; run a sweep first")
+        sweep_id = ids[-1]  # re-render the latest sweep as-is
+        row = con.execute("SELECT source FROM fare_snapshots WHERE sweep_id = ? LIMIT 1",
+                          (sweep_id,)).fetchone()
+        source = row[0] if row else "unknown"
+    else:
+        sweep_id = datetime.datetime.now(datetime.UTC).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+        sources = pick_sources(mode, cfg)
+        source = "+".join(name for name, _ in sources)
+        print(f"Sweep {sweep_id} ({source})")
+        fetch_all(cfg, sources, con, sweep_id)
+        ids = store.sweep_ids(con, rank_sources)
     # latest_offers falls back to the freshest prior price (marked stale) for
     # any query this sweep missed, so flaky sources don't drop cities
     best_now = store.latest_offers(con, sweep_id, rank_sources)
@@ -157,7 +167,7 @@ def main():
     itins = optimizer.build_itineraries(cfg, best_now, best_prev)
     alerts = optimizer.find_alerts(cfg, best_now, best_prev, cfg["alerts"]["drop_pct"])
 
-    if args.spot_check:
+    if args.spot_check and not args.render_only:
         if sources[0][0] == "gflights":
             print("Skipping spot-check: Google Flights is already the primary source.")
         else:
