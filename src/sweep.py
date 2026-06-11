@@ -163,6 +163,11 @@ def main():
     trav = cfg["travelers"]
     for (leg, o, d, dt), offer in best_now.items():
         offer["gf_url"] = links.gf_link(o, d, dt, trav["adults"], trav["children"])
+    if best_now and not any(o.get("gf_url") for o in best_now.values()):
+        # gf_link degrades to None per-offer (links are decoration), but ALL of
+        # them missing means fast-flights is not importable; say so loudly
+        # instead of silently shipping a dashboard with no price links.
+        print("WARNING: no Google Flights links generated; is fast-flights installed?")
 
     itins = optimizer.build_itineraries(cfg, best_now, best_prev)
     alerts = optimizer.find_alerts(cfg, best_now, best_prev, cfg["alerts"]["drop_pct"])

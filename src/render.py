@@ -47,8 +47,7 @@ TEMPLATE = """<!DOCTYPE html>
   td img.al, td .alx { width:20px; height:20px; vertical-align:middle; }
   td .als { margin-right:7px; }
   .cair { white-space:nowrap; }
-  .meta { font-size:12.5px; color:var(--dim); margin-top:8px;
-          white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .meta { font-size:12.5px; color:var(--dim); margin-top:8px; }
   .route { font-style:italic; }
   .delta-up { color:var(--bad); } .delta-down { color:var(--good); }
   table { border-collapse:collapse; width:100%; font-size:14px; }
