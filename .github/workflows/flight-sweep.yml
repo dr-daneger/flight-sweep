@@ -1,0 +1,54 @@
+name: flight price sweep
+
+on:
+  schedule:
+    - cron: "0 14 * * *"   # daily ~7am Pacific; runs only from the default branch
+  workflow_dispatch:
+    inputs:
+      spot_check:
+        description: "Also Google-Flights-check the top N entry cities"
+        default: "0"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: flight-sweep
+  cancel-in-progress: false
+
+jobs:
+  sweep:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+          python -m playwright install chromium --with-deps
+
+      - name: Run sweep
+        env:
+          AMADEUS_CLIENT_ID: ${{ secrets.AMADEUS_CLIENT_ID }}
+          AMADEUS_CLIENT_SECRET: ${{ secrets.AMADEUS_CLIENT_SECRET }}
+        run: |
+          # auto mode: Amadeus primary with Google Flights backfill when the
+          # secrets exist, otherwise full sweep via the Google Flights scraper
+          if [ -z "$AMADEUS_CLIENT_ID" ]; then
+            echo "::warning::AMADEUS secrets not set — sweeping via Google Flights scraper only"
+          fi
+          N="${{ github.event.inputs.spot_check || '0' }}"
+          python -m src.sweep --source auto --spot-check "$N"
+
+      - name: Commit price history + dashboard
+        run: |
+          git config user.name "flight-sweep-bot"
+          git config user.email "actions@users.noreply.github.com"
+          git add data docs
+          git diff --cached --quiet && echo "no changes" && exit 0
+          git commit -m "flight-sweep: $(date -u +%F) price snapshot"
+          git push

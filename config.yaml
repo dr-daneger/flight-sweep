@@ -1,0 +1,69 @@
+# Wedding trip flight optimizer — October 2026
+# Three priced legs; the Europe road-trip van covers everything between
+# the entry city and Bordeaux (one-way rental, dropped at BOD).
+
+currency: USD
+eur_usd: 1.10          # used only to fold van drop-fee estimates into totals
+cabin: ECONOMY
+
+travelers:
+  adults: 2            # traveller A, traveller B
+  children: 3          # traveller C, traveller D, traveller E — "children" = ages 2-11 on travel
+                       # dates. If any are 12+, move them to adults (fares differ).
+
+legs:
+  outbound:            # get to Dallas for the Oct 10 wedding
+    origin: PDX
+    dest: DFW
+    dates:             # dep_after / dep_before are HARD local-departure windows
+      - {date: "2026-10-08", dep_after: "17:00"}   # no earlier than 5pm Thu
+      - {date: "2026-10-09", dep_before: "19:00"}  # no later than 7pm Fri
+  transatlantic:       # Dallas -> Europe entry city (the optimizer's variable)
+    origin: DFW
+    dates:
+      - {date: "2026-10-11"}
+      - {date: "2026-10-12"}
+  home:                # Bordeaux -> home after the Oct 24-25 wedding
+    origin: BOD
+    dest: PDX
+    dates:
+      - {date: "2026-10-25", dep_after: "17:00"}   # only after the wedding wraps
+      - {date: "2026-10-26"}
+
+# Candidate Europe entry cities. drive_hours = nonstop driving time to Bordeaux
+# (you'll spread it over ~12 days). van_fee_eur = rough one-way drop fee for a
+# rental van returned in Bordeaux — France domestic is near-free, cross-border
+# is often EUR 500-900 and some agencies refuse it entirely. Verify before booking.
+# weather = typical daytime high mid/late October.
+entry_cities:
+  - {code: LIS, city: Lisbon,    country: PT, drive_hours: 10.5, van_fee_eur: 900, weather_c: 22,
+     route: "Lisbon > Porto > San Sebastian > Basque coast > Bordeaux"}
+  - {code: OPO, city: Porto,     country: PT, drive_hours: 7.5,  van_fee_eur: 800, weather_c: 20,
+     route: "Porto > Douro valley > Bilbao > San Sebastian > Bordeaux"}
+  - {code: MAD, city: Madrid,    country: ES, drive_hours: 6.5,  van_fee_eur: 600, weather_c: 18,
+     route: "Madrid > Rioja wine country > Bilbao > Biarritz > Bordeaux"}
+  - {code: BCN, city: Barcelona, country: ES, drive_hours: 6.0,  van_fee_eur: 600, weather_c: 21,
+     route: "Barcelona > Zaragoza or Pyrenees > San Sebastian > Bordeaux"}
+  - {code: SVQ, city: Seville,   country: ES, drive_hours: 12.0, van_fee_eur: 950, weather_c: 25,
+     route: "Seville > Cordoba > Madrid > Basque coast > Bordeaux (warmest option)"}
+  - {code: NCE, city: Nice,      country: FR, drive_hours: 8.0,  van_fee_eur: 100, weather_c: 19,
+     route: "Nice > Provence > Carcassonne > Toulouse > Bordeaux (no border fee)"}
+  - {code: MRS, city: Marseille, country: FR, drive_hours: 6.5,  van_fee_eur: 100, weather_c: 19,
+     route: "Marseille > Avignon > Languedoc > Carcassonne > Bordeaux (no border fee)"}
+  - {code: FCO, city: Rome,      country: IT, drive_hours: 13.5, van_fee_eur: 900, weather_c: 21,
+     route: "Rome > Florence > Italian Riviera > Provence > Bordeaux (long haul)"}
+  - {code: MXP, city: Milan,     country: IT, drive_hours: 9.5,  van_fee_eur: 700, weather_c: 16,
+     route: "Milan > Italian Riviera > Nice > Provence > Bordeaux"}
+  - {code: VCE, city: Venice,    country: IT, drive_hours: 11.5, van_fee_eur: 800, weather_c: 15,
+     route: "Venice > Verona > Milan > Riviera > Provence > Bordeaux"}
+  - {code: GVA, city: Geneva,    country: CH, drive_hours: 6.5,  van_fee_eur: 250, weather_c: 13,
+     route: "Geneva (rent on French side!) > Lyon > Dordogne > Bordeaux"}
+  - {code: CDG, city: Paris,     country: FR, drive_hours: 5.5,  van_fee_eur: 100, weather_c: 14,
+     route: "Paris > Loire chateaux > Dordogne > Bordeaux (no border fee, cooler)"}
+
+alerts:
+  drop_pct: 5          # flag a leg if its best price moved >= this % since last sweep
+
+amadeus:
+  hostname: https://test.api.amadeus.com   # switch to https://api.amadeus.com for production keys
+  max_offers: 5        # offers recorded per query (cheapest first)
