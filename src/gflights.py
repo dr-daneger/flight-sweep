@@ -23,7 +23,7 @@ import os
 import re
 import time
 
-from .timewin import filter_offers
+from .timewin import filter_offers, filter_stops
 
 _tls_patched = False
 
@@ -66,7 +66,8 @@ def _modes(need_times=False):
         return ["common", "force-fallback"]
 
 
-def _fetch(origin, dest, dep_date, adults, children, retries=2, need_times=False):
+def _fetch(origin, dest, dep_date, adults, children, retries=2, need_times=False,
+           max_stops=None):
     from fast_flights import FlightData, Passengers, get_flights
     last_exc = None
     for attempt in range(retries):
@@ -80,6 +81,13 @@ def _fetch(origin, dest, dep_date, adults, children, retries=2, need_times=False
                     passengers=Passengers(adults=adults, children=children,
                                           infants_in_seat=0, infants_on_lap=0),
                     fetch_mode=mode,
+                    # Encoded into the Google Flights query itself, so compliant
+                    # nonstops surface even when cheap connections crowd the page.
+                    # Clamped to >=1: a zero-valued stops filter renders the
+                    # "Nonstop" chip but the results backend errors with "Oops,
+                    # something went wrong" (verified 2026-06-11); filter_stops
+                    # below enforces the exact limit on the parsed offers.
+                    max_stops=None if max_stops is None else max(1, max_stops),
                 )
             except Exception as exc:  # noqa: BLE001 — scraper failures must never kill a sweep
                 last_exc = exc
@@ -123,6 +131,7 @@ _WITH_RE = re.compile(r"flights? with ([^.]+?)\.")
 _LEAVES_RE = re.compile(r"Leaves .+? at (\d{1,2}:\d{2}\s*[AP]M)", re.I)
 _LAYOVER_RE = re.compile(
     r"(?:(\d+)\s*hr)?\s*(?:(\d+)\s*min)?\s*(?:overnight\s+)?layover at ([^.]+?)\.", re.I)
+_STOPS_RE = re.compile(r"\b(?:(Nonstop)|(\d+)\s*stops?)\s+flight", re.I)
 
 
 def _shorten_airport(name):
@@ -147,10 +156,17 @@ def _parse_label(label):
     ]
     wm = _WITH_RE.search(label)
     lm = _LEAVES_RE.search(label)
+    sm = _STOPS_RE.search(label)
+    stops = None
+    if sm:
+        stops = 0 if sm.group(1) else int(sm.group(2))
+    elif layovers:
+        stops = len(layovers)
     return {
         "price": float(pm.group(1).replace(",", "")),
         "carrier": wm.group(1).replace(" and ", ", ") if wm else None,
         "dep_clock": _clock(lm.group(1)) if lm else None,
+        "stops": stops,
         "layovers": layovers,
     }
 
@@ -163,18 +179,22 @@ def _fetch_result_labels(url):
         page.goto(url, timeout=45000)
         if page.url.startswith("https://consent.google.com"):
             page.click('text="Accept all"')
-        page.locator(".eQ35Ce").first.wait_for(timeout=20000)
+        # Wait on the result labels themselves; CSS class names vary between
+        # page variants (filtered pages lack the class the parser waits on).
+        page.wait_for_function(
+            "() => document.querySelectorAll('[aria-label*=\"US dollars\"]').length > 0",
+            timeout=25000)
         labels = page.eval_on_selector_all(
             "[aria-label]", "els => els.map(e => e.getAttribute('aria-label'))")
         browser.close()
     return [t for t in labels if t and "US dollars" in t]
 
 
-def _enrich_offers(origin, dest, dep_date, adults, children, offers):
+def _enrich_offers(origin, dest, dep_date, adults, children, offers, max_stops=None):
     """Attach stops_detail and backfill carrier by matching page labels to
     offers on price (party total), tie-broken by departure clock."""
     from .links import gf_link
-    url = gf_link(origin, dest, dep_date, adults, children)
+    url = gf_link(origin, dest, dep_date, adults, children, max_stops=max_stops)
     if not url:
         return
     parsed = [p for t in _fetch_result_labels(url) if (p := _parse_label(t))]
@@ -192,20 +212,20 @@ def _enrich_offers(origin, dest, dep_date, adults, children, offers):
         p = cands[0]
         if p["layovers"] and o.get("stops_detail") is None:
             o["stops_detail"] = _json.dumps(p["layovers"])
-            if o.get("stops") is None:
-                o["stops"] = len(p["layovers"])
+        if o.get("stops") is None and p["stops"] is not None:
+            o["stops"] = p["stops"]  # includes an explicit 0 for nonstops
         if not o.get("carrier") and p["carrier"]:
             o["carrier"] = p["carrier"][:32]
 
 
 def search(origin, dest, dep_date, adults, children, currency="USD",
-           max_offers=5, window=None, **_):
+           max_offers=5, window=None, max_stops=None, **_):
     """Same contract as the other fare sources: party-total offers, cheapest
-    first. The time window is applied to the FULL parsed list before
-    truncation — a $900 in-window evening flight must beat out-of-window
+    first. The time window and stop limit are applied to the FULL parsed list
+    before truncation — a $900 compliant flight must beat non-compliant
     cheaper fares, not get cut with them."""
     result = _fetch(origin, dest, dep_date, adults, children,
-                    need_times=bool(window))
+                    need_times=bool(window), max_stops=max_stops)
     if result is None:
         return []
     offers = []
@@ -224,6 +244,7 @@ def search(origin, dest, dep_date, adults, children, currency="USD",
             "arr_time": getattr(f, "arrival", None) or None,  # raw text, may roll to next day
         })
     offers = filter_offers(offers, window)
+    offers = filter_stops(offers, max_stops)
     offers.sort(key=lambda o: o["price"])
     offers = offers[:max_offers]
     # Enrich when something is worth fetching the rendered page again for:
@@ -232,10 +253,13 @@ def search(origin, dest, dep_date, adults, children, currency="USD",
            or not o.get("carrier") for o in offers):
         try:
             import playwright  # noqa: F401
-            _enrich_offers(origin, dest, dep_date, adults, children, offers)
+            _enrich_offers(origin, dest, dep_date, adults, children, offers,
+                           max_stops=max_stops)
         except Exception as exc:  # noqa: BLE001 — detail is decoration
             print(f"  ~ layover enrich {origin}->{dest} {dep_date}: "
                   f"{type(exc).__name__}: {str(exc)[:70]}")
+        # enrichment can reveal a stop count the parser lacked; re-apply the limit
+        offers = filter_stops(offers, max_stops)
     time.sleep(3)  # pace queries politely
     return offers
 

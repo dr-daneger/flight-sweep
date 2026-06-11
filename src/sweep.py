@@ -47,7 +47,7 @@ def apply_window(offers, win):
     return kept, len(offers) - len(kept)
 
 
-def fetch_all(cfg, sources, con, sweep_id):
+def fetch_all(cfg, sources, con, sweep_id, only_legs=None):
     """sources = [(name, search_fn), ...] tried in order per query (backfill)."""
     trav = cfg["travelers"]
     kw = dict(adults=trav["adults"], children=trav["children"],
@@ -61,21 +61,27 @@ def fetch_all(cfg, sources, con, sweep_id):
             queries.append(("transatlantic", legs["transatlantic"]["origin"], city["code"], d))
     for d in legs["home"]["dates"]:
         queries.append(("home", legs["home"]["origin"], legs["home"]["dest"], d))
+    if only_legs:
+        queries = [q for q in queries if q[0] in only_legs]
 
     for leg, origin, dest, dep_date in queries:
         win = cfg["legs"][leg].get("windows", {}).get(dep_date)
+        max_stops = cfg["legs"][leg].get("max_stops")
         offers, used, dropped = [], None, 0
         for name, search in sources:
             offers = search(origin, dest, dep_date, cabin=cfg["cabin"],
-                            window=win, **kw)
+                            window=win, max_stops=max_stops, **kw)
             offers, dropped = apply_window(offers, win)  # safety net
+            n_pre = len(offers)
+            offers = timewin.filter_stops(offers, max_stops)  # safety net
+            dropped += n_pre - len(offers)
             if offers:
                 used = name
                 break
             if len(sources) > 1:
                 print(f"  {origin}->{dest} {dep_date}: {name} empty, trying backup...")
         tag = f" [{used}]" if used and used != sources[0][0] else ""
-        wtag = f", {dropped} outside time window" if dropped else ""
+        wtag = f", {dropped} outside constraints" if dropped else ""
         print(f"  {origin}->{dest} {dep_date}: "
               + (f"${offers[0]['price']:,.0f} ({len(offers)} offers{wtag}){tag}"
                  if offers else f"no offers within constraints{wtag}"))
@@ -128,6 +134,9 @@ def main():
                     help="Google-Flights-check the top N entry cities")
     ap.add_argument("--render-only", action="store_true",
                     help="rebuild the dashboard from existing data, no fetching")
+    ap.add_argument("--legs", default=None, metavar="L1,L2",
+                    help="fetch only these legs (outbound,transatlantic,home); "
+                         "other legs keep their stored prices")
     ap.add_argument("--config", default=str(ROOT / "config.yaml"))
     ap.add_argument("--db", default=str(ROOT / "data" / "prices.sqlite"))
     ap.add_argument("--out", default=str(ROOT / "docs" / "index.html"))
@@ -152,18 +161,28 @@ def main():
         sweep_id = datetime.datetime.now(datetime.UTC).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
         sources = pick_sources(mode, cfg)
         source = "+".join(name for name, _ in sources)
+        only_legs = set(args.legs.split(",")) if args.legs else None
         print(f"Sweep {sweep_id} ({source})")
-        fetch_all(cfg, sources, con, sweep_id)
+        fetch_all(cfg, sources, con, sweep_id, only_legs=only_legs)
         ids = store.sweep_ids(con, rank_sources)
+    # Hard per-leg stop limits also constrain which STORED offers may rank:
+    # rows fetched before a limit existed (or with rank > 0) are re-screened.
+    leg_max_stops = {leg: lc["max_stops"] for leg, lc in cfg["legs"].items()
+                     if lc.get("max_stops") is not None}
     # latest_offers falls back to the freshest prior price (marked stale) for
     # any query this sweep missed, so flaky sources don't drop cities
-    best_now = store.latest_offers(con, sweep_id, rank_sources)
+    best_now = store.latest_offers(con, sweep_id, rank_sources,
+                                   leg_max_stops=leg_max_stops)
     prev_id = ids[-2] if len(ids) >= 2 else None
-    best_prev = store.best_offers(con, prev_id, rank_sources) if prev_id else None
+    best_prev = (store.best_offers(con, prev_id, rank_sources,
+                                   leg_max_stops=leg_max_stops)
+                 if prev_id else None)
 
     trav = cfg["travelers"]
     for (leg, o, d, dt), offer in best_now.items():
-        offer["gf_url"] = links.gf_link(o, d, dt, trav["adults"], trav["children"])
+        # deep links carry the same hard filters as the fetch (stops, party)
+        offer["gf_url"] = links.gf_link(o, d, dt, trav["adults"], trav["children"],
+                                        max_stops=leg_max_stops.get(leg))
         if isinstance(offer.get("stops_detail"), str):
             # stored as JSON text; the dashboard wants the structure. Names are
             # re-shortened here so rows stored before a parser improvement

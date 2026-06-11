@@ -84,14 +84,14 @@ TEMPLATE = """<!DOCTYPE html>
 <div class="note">Van drop fees are static estimates for a one-way rental returned in
 Bordeaux — cross-border one-ways (ES/PT/IT/CH) are pricey and some agencies refuse them.
 Always verify the winning fare on Google Flights / the airline before booking.</div>
-<h2>Getting to Dallas <span class="pill">arrive by Oct 10</span></h2>
+<h2>Getting to Dallas <span class="pill">arrive by Oct 10 · nonstop only</span></h2>
 <table id="tbl-outbound"></table>
 <h2>Flying home from Bordeaux <span class="pill">depart Oct 25–26</span></h2>
 <table id="tbl-home"></table>
-<div class="note">Hard windows (enforced when fetching, before any price ranking):
-Oct 8 departs ≥5:00 pm, Oct 9 departs ≤7:00 pm, Oct 25 departs ≥5:00 pm. Rows marked "?"
-came from a source without departure-time data — check via the price link before
-trusting them. Click any blue price to open that exact search (right airports,
+<div class="note">Hard constraints (enforced when fetching, before any price ranking):
+PDX→DFW must be nonstop; Oct 8 departs ≥5:00 pm, Oct 9 departs ≤7:00 pm, Oct 25
+departs ≥5:00 pm. Rows marked "?" came from a source without departure-time data —
+check via the price link before trusting them. Click any blue price to open that exact search (right airports,
 date, all 5 travelers) in Google Flights; apply the time slider there to match the
 window.</div>
 <h2>Transatlantic leg detail + price history</h2>

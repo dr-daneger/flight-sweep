@@ -15,6 +15,7 @@ legs:
   outbound:            # get to Dallas for the Oct 10 wedding
     origin: PDX
     dest: DFW
+    max_stops: 0       # HARD: nonstop only (PDX-DFW with kids; no connections)
     dates:             # dep_after / dep_before are HARD local-departure windows
       - {date: "2026-10-08", dep_after: "17:00"}   # no earlier than 5pm Thu
       - {date: "2026-10-09", dep_before: "19:00"}  # no later than 7pm Fri

@@ -64,14 +64,36 @@ def sweep_ids(con, sources=("amadeus", "gflights")):
             WHERE source IN ({ph}) ORDER BY sweep_id""", sources)]
 
 
-def best_offers(con, sweep_id, sources=("amadeus", "gflights")):
-    """Cheapest offer per (leg, origin, dest, dep_date) within one sweep."""
+def _meets_stop_limit(row, leg_max_stops):
+    """Hard per-leg stop limits from config, applied at RANKING time.
+
+    Stricter than the fetch-time filter: a row whose stop count is unknown
+    cannot be verified against a hard constraint, so it does not rank (fresh
+    fetches resolve stop counts via the label enrichment; unknowns here are
+    stale pre-enrichment rows, and letting them rank would let a probably
+    violating fare win the itinerary forever on dates where no compliant
+    flight exists)."""
+    if not leg_max_stops:
+        return True
+    ms = leg_max_stops.get(row["leg"])
+    return ms is None or (row["stops"] is not None and row["stops"] <= ms)
+
+
+def best_offers(con, sweep_id, sources=("amadeus", "gflights"), leg_max_stops=None):
+    """Cheapest compliant offer per (leg, origin, dest, dep_date) within one
+    sweep. Ranks beyond 0 matter once constraints exist: the cheapest stored
+    offer may violate a stop limit while a pricier one complies."""
     ph = ",".join("?" * len(sources))
     rows = con.execute(
         f"""SELECT * FROM fare_snapshots
-            WHERE sweep_id = ? AND source IN ({ph}) AND rank = 0""",
+            WHERE sweep_id = ? AND source IN ({ph}) ORDER BY price""",
         (sweep_id, *sources)).fetchall()
-    return {(r["leg"], r["origin"], r["dest"], r["dep_date"]): dict(r) for r in rows}
+    out = {}
+    for r in rows:
+        key = (r["leg"], r["origin"], r["dest"], r["dep_date"])
+        if key not in out and _meets_stop_limit(r, leg_max_stops):
+            out[key] = dict(r)
+    return out
 
 
 def all_offers(con, sweep_id, sources=("amadeus", "gflights")):
@@ -84,28 +106,31 @@ def all_offers(con, sweep_id, sources=("amadeus", "gflights")):
     return [dict(r) for r in rows]
 
 
-def latest_offers(con, current_sweep_id, sources=("amadeus", "gflights")):
-    """Cheapest offer per query from the most recent sweep that has one.
+def latest_offers(con, current_sweep_id, sources=("amadeus", "gflights"),
+                  leg_max_stops=None):
+    """Cheapest compliant offer per query from the most recent sweep that has
+    a compliant one.
 
     Brittle sources (the scraper) can miss queries in any given sweep; rather
     than dropping those cities from the ranking, fall back to the freshest
-    prior price and mark it stale.
+    prior price and mark it stale. The same fallback applies to constraints:
+    a sweep whose offers all violate a stop limit defers to the freshest sweep
+    holding a compliant offer.
     """
     ph = ",".join("?" * len(sources))
     rows = con.execute(
-        f"""SELECT f.* FROM fare_snapshots f
-            JOIN (SELECT leg, origin, dest, dep_date, MAX(sweep_id) AS ms
-                  FROM fare_snapshots WHERE source IN ({ph})
-                  GROUP BY leg, origin, dest, dep_date) m
-              ON f.leg = m.leg AND f.origin = m.origin AND f.dest = m.dest
-             AND f.dep_date = m.dep_date AND f.sweep_id = m.ms
-            WHERE f.rank = 0 AND f.source IN ({ph})""",
-        (*sources, *sources)).fetchall()
+        f"""SELECT * FROM fare_snapshots WHERE source IN ({ph})
+            ORDER BY sweep_id DESC, price""",
+        sources).fetchall()
     out = {}
-    for r in rows:
+    for r in rows:  # newest sweep first, cheapest first within a sweep
+        key = (r["leg"], r["origin"], r["dest"], r["dep_date"])
+        if key in out or not _meets_stop_limit(r, leg_max_stops):
+            continue  # first compliant row per query wins
+
         d = dict(r)
         d["stale"] = d["sweep_id"] if d["sweep_id"] != current_sweep_id else None
-        out[(r["leg"], r["origin"], r["dest"], r["dep_date"])] = d
+        out[key] = d
     return out
 
 

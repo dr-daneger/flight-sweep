@@ -39,7 +39,7 @@ class AmadeusClient:
         return self._token
 
     def search(self, origin, dest, dep_date, adults, children, cabin="ECONOMY",
-               currency="USD", max_offers=5, window=None):
+               currency="USD", max_offers=5, window=None, max_stops=None, **_):
         """Return up to max_offers one-way offers, cheapest first.
 
         price = grand total for the whole party. Returns [] on API errors so a
@@ -56,6 +56,10 @@ class AmadeusClient:
         }
         if children:
             params["children"] = children
+        if max_stops == 0:
+            # the API supports nonstop natively; looser limits are filtered
+            # post-parse below (segments are always known here)
+            params["nonStop"] = "true"
         try:
             resp = requests.get(
                 f"{self.hostname}/v2/shopping/flight-offers",
@@ -74,6 +78,8 @@ class AmadeusClient:
             segs = itin["segments"]
             # window applies before truncation: Amadeus always has dep times
             if not filter_offers([{"dep_time": segs[0]["departure"]["at"]}], window):
+                continue
+            if max_stops is not None and len(segs) - 1 > max_stops:
                 continue
             carrier = (o.get("validatingAirlineCodes") or [segs[0]["carrierCode"]])[0]
             if carrier in seen_carriers and len(data) > max_offers:
