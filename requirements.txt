@@ -1,4 +1,4 @@
 requests>=2.31
 pyyaml>=6.0
-fast-flights>=2.2   # Google Flights source (backup/primary-without-keys + spot-check)
+fast-flights>=2.2,<3   # Google Flights source (backup/primary-without-keys + spot-check). Pinned <3: 3.0 (2026-06-13) removed the FlightData/get_flights API this code uses.
 playwright>=1.40    # local-browser tier for routes the lite page will not render
