@@ -44,10 +44,12 @@ decision:
   primary_sku: samsung_s95f_83
   hard_buy_trigger: 3000.0        # net <= this on the primary (any in-scope
                                   # condition passing the §4.4 gates) => BUY now
-  # Patience horizon / purchase deadline (spec §11.1). The new-house move is
-  # mid-July 2026, so the stopping horizon ends here by default. Pushing this
-  # out trades a shot at a deeper EOL trough against rising stockout risk.
-  deadline: "2026-07-15"
+  # Patience horizon / purchase deadline (spec §11.1). Owner's call: getting a
+  # deal is top priority and there is no hard move-in deadline, so this is null —
+  # the stopping policy is bounded by the rising stockout hazard (V3), not a
+  # calendar date. It will hold out for the deepest 83" deal the survival curve
+  # still makes reachable. Set a date here to re-impose a hard deadline.
+  deadline: null
   # Fallback economics: cost of NOT securing the primary before it is gone =
   # substitute_price + stockout_penalty (K). The 77" S95F is executable new at
   # ~$2,998 today (spec §11.2), so it caps the regret of missing the 83".
@@ -84,7 +86,9 @@ value:
 # ---------------------------------------------------------------------------
 forecast:
   prior_halflife_obs: 30          # live obs at which prior/data weight is 50/50
-  horizon_days: 180               # forecast out to ~6 months past the deadline
+  horizon_days: 300               # with no deadline, look ~10 months out so the
+                                  # deep EOL troughs (Black Friday, Q1 clearance)
+                                  # are in view; survival discounts the far tail
   quantiles: [0.05, 0.25, 0.5, 0.75, 0.95]
   student_t_df: 4                 # heavy-tailed obs noise, robust to scrape outliers
 

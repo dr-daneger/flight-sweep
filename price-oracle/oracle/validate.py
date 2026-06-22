@@ -9,6 +9,8 @@
     parser corrupts V1 invisibly and can mis-fire a BUY — the most dangerous
     failure — so anomalies raise an alert rather than a silent NaN.
 """
+import datetime as _dt
+
 import numpy as np
 
 from . import store
@@ -70,6 +72,44 @@ def score_calibration(cfg, sku_key=None):
         "pinball_q50": round(float(np.mean(pin50)), 2) if pin50 else None,
         "coverage_90": round(cov80 / n, 3) if n else None,
         "model_version": MODEL_VERSION,
+    }
+
+
+def data_health(cfg, market_state, history, forecaster, today):
+    """Are we getting enough data to trust the verdict? (the owner's question).
+
+    Three axes, each scored 0-2, combined into a confidence tier:
+      * breadth  — how many authorized-new in-stock sources corroborate today's
+                   price (single-source price is fragile);
+      * depth    — days of history accrued; until it builds, the forecast leans
+                   on the reference-class prior (reported as prior weight);
+      * sharpness— width of the 30-day forecast interval (wide = not yet enough
+                   signal to be confident about where price is going).
+    Survivorship means even good coverage can miss a flash dip, so this measures
+    sufficiency, not certainty.
+    """
+    n_sources = int(market_state.get("n_legit_new") or 0)
+    n_obs = int(market_state.get("n_offers") or 0)
+    n_hist = len(history)
+    prior_w = round(1 - forecaster.w_data, 3)
+
+    d30 = (parse_date(today) + _dt.timedelta(days=30)).isoformat()
+    row = forecaster.quantiles([d30])[0]
+    band_pct = round(100 * (row["low_q95"] - row["low_q05"]) / max(row["low_q50"], 1), 1)
+
+    breadth = 2 if n_sources >= 3 else (1 if n_sources >= 1 else 0)
+    depth = 2 if n_hist >= 60 else (1 if n_hist >= 20 else 0)
+    sharp = 2 if band_pct < 15 else (1 if band_pct < 30 else 0)
+    score = breadth + depth + sharp
+    confidence = "HIGH" if score >= 5 else ("MEDIUM" if score >= 3 else "LOW")
+
+    bits = [f"{n_sources} corroborating source(s) today",
+            f"{n_hist} day(s) history (prior weight {prior_w:.0%})",
+            f"±{band_pct:.0f}% 30-day forecast band"]
+    return {
+        "confidence": confidence, "n_sources_today": n_sources,
+        "n_offers_today": n_obs, "n_hist_days": n_hist, "prior_weight": prior_w,
+        "forecast_band_pct_30d": band_pct, "summary": "; ".join(bits),
     }
 
 

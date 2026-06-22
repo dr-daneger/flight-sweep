@@ -48,11 +48,11 @@ TEMPLATE = """<!DOCTYPE html>
 <div class="sub" id="sub"></div>
 <div id="verdict"></div>
 <div class="stats" id="stats"></div>
-<h2>Forecast — achievable low to deadline <span class="pill">reference-class prior + live</span></h2>
+<h2>Forecast — achievable low <span class="pill">reference-class prior + live</span></h2>
 <div class="card"><div id="fan"></div>
  <div class="legend"><i style="background:#23425c">90% band</i><i style="background:#2f5d80">50% band</i>
  <i style="color:var(--blue)">— median</i> · <i style="color:var(--good)">● history</i> ·
- <i style="color:var(--accent)">▼ trough</i> · <i style="color:var(--bad)">— threshold</i> · dashed = deadline</div></div>
+ <i style="color:var(--accent)">▼ trough</i> · <i style="color:var(--bad)">— threshold</i> · dashed = horizon</div></div>
 <h2>Stockout / EOL survival S(t)</h2>
 <div class="card"><div id="surv"></div>
  <div class="legend">P(still buyable) over time — falls steeply after the successor ships</div></div>
@@ -78,18 +78,24 @@ document.documentElement.style.setProperty('--vc',
 document.getElementById('verdict').innerHTML=
  `<div class="verdict"><div class="vbig">${dec.verdict}</div>
   <div class="vwhy">${dec.rationale}${dec.hard_override?' <span class="pill">hard override</span>':''}</div></div>`;
-const savings=dec.expected_savings_wait;
+const savings=dec.expected_savings_wait, hl=P.health||{};
+const hcolor={HIGH:'var(--good)',MEDIUM:'var(--accent)',LOW:'var(--bad)'}[hl.confidence]||'var(--dim)';
+const hzlab=dec.horizon_is_deadline?'deadline':'EOL horizon';
 document.getElementById('stats').innerHTML=[
  ['Best legit now',fmt(dec.best_legit_now)+(ms.best_buyable_condition?` <span class="pill">${ms.best_buyable_condition}</span>`:'')],
  ['BUY threshold',fmt(dec.threshold)],
  ['Expected wait savings',savings==null?'—':(savings>0?fmt(savings):'none')],
  ['Robust street (typical)',fmt(ms.robust_street)],
  ['Deal depth vs typical',fmt(ms.deal_depth)],
- ['P(buyable at deadline)',pct(dec.p_available_deadline)+` <span class="pill">${dec.deadline}</span>`],
+ [`Fallback: 77" + K`,fmt(dec.fallback_cost)+` <span class="pill">${dec.substitute_is_live?'live 77"':'anchor'} ${fmt(dec.substitute_price)}</span>`],
+ [`P(buyable at ${hzlab})`,pct(dec.p_available_horizon)+` <span class="pill">${dec.horizon_end}</span>`],
  ['Next forecast trough',dec.trough_price?`${fmt(dec.trough_price)} <span class="pill">${dec.trough_date}</span>`:'—'],
  ['Dominant uncertainty',dec.dominant_driver],
+ ['Data confidence',`<span style="color:${hcolor}">${hl.confidence||'—'}</span>`],
  ['Prior weight (shrinks)',pct(dec.prior_weight)],
 ].map(([k,v])=>`<div class="stat"><div class="k">${k}</div><div class="v">${v}</div></div>`).join('');
+if(hl.summary){document.getElementById('verdict').innerHTML+=
+ `<div class="note">Data health <b style="color:${hcolor}">${hl.confidence}</b> — ${hl.summary}</div>`;}
 
 // ---- fan chart: history points + forecast bands + threshold + deadline ----
 function fan(el){
@@ -97,7 +103,7 @@ function fan(el){
  const hist=P.history, fc=P.forecast;
  const xs=[...hist.map(h=>h.date),...fc.map(f=>f.date)];
  const ord=d=>Math.floor(new Date(d+'T00:00:00Z')/864e5);
- const x0=Math.min(...xs.map(ord)), x1=Math.max(...xs.map(ord),ord(dec.deadline));
+ const x0=Math.min(...xs.map(ord)), x1=Math.max(...xs.map(ord),ord(dec.horizon_end));
  const ys=[...hist.flatMap(h=>[h.L,h.M]).filter(v=>v!=null),
            ...fc.flatMap(f=>[f.q05,f.q95])];
  let y0=Math.min(...ys), y1=Math.max(...ys,dec.threshold); const pad=(y1-y0)*0.08||50; y0-=pad;y1+=pad;
@@ -116,8 +122,8 @@ function fan(el){
  svg+=`<path d="${path(fc.map(f=>[X(f.date),Y(f.q50)]))}" fill="none" stroke="#58a6ff" stroke-width="2"/>`;
  // threshold line + deadline marker
  svg+=`<line x1="${PADL}" y1="${Y(dec.threshold)}" x2="${W-PADR}" y2="${Y(dec.threshold)}" stroke="#f85149" stroke-width="1.4" stroke-dasharray="2 3"/>`;
- svg+=`<line x1="${X(dec.deadline)}" y1="${PADT}" x2="${X(dec.deadline)}" y2="${H-PADB}" stroke="#8b9aab" stroke-width="1.2" stroke-dasharray="4 4"/>`;
- svg+=`<text x="${X(dec.deadline)}" y="${PADT+10}" fill="#8b9aab" font-size="11" text-anchor="middle">deadline</text>`;
+ svg+=`<line x1="${X(dec.horizon_end)}" y1="${PADT}" x2="${X(dec.horizon_end)}" y2="${H-PADB}" stroke="#8b9aab" stroke-width="1.2" stroke-dasharray="4 4"/>`;
+ svg+=`<text x="${X(dec.horizon_end)}" y="${PADT+10}" fill="#8b9aab" font-size="11" text-anchor="middle">${dec.horizon_is_deadline?'deadline':'horizon'}</text>`;
  // history points (achievable low)
  hist.forEach(h=>{if(h.L!=null)svg+=`<circle cx="${X(h.date)}" cy="${Y(h.L)}" r="2.4" fill="#3fb950"/>`;});
  // trough marker
@@ -138,7 +144,7 @@ function surv(el){
    `<text x="${PADL-6}" y="${Y(v)+4}" fill="#8b9aab" font-size="11" text-anchor="end">${pct(v)}</text>`;});
  const pts=s.map(p=>`${X(p.date).toFixed(1)},${Y(p.S).toFixed(1)}`).join(' ');
  svg+=`<polyline points="${pts}" fill="none" stroke="#f85149" stroke-width="2"/>`;
- svg+=`<line x1="${X(dec.deadline)}" y1="${PADT}" x2="${X(dec.deadline)}" y2="${H-PADB}" stroke="#8b9aab" stroke-dasharray="4 4"/>`;
+ svg+=`<line x1="${X(dec.horizon_end)}" y1="${PADT}" x2="${X(dec.horizon_end)}" y2="${H-PADB}" stroke="#8b9aab" stroke-dasharray="4 4"/>`;
  svg+='</svg>'; el.innerHTML=svg;
 }
 surv(document.getElementById('surv'));
@@ -184,13 +190,15 @@ def render_html(payload, out_path, title):
 
 def render_markdown(payload, out_path):
     P = payload["primary"]
-    d, ms = P["decision"], P["market_state"]
+    d, ms, health = P["decision"], P["market_state"], P.get("health", {})
 
     def money(x):
         return f"${x:,.0f}" if x is not None else "—"
 
     L = d["best_legit_now"]
     savings = d["expected_savings_wait"]
+    sub_src = 'live 77"' if d["substitute_is_live"] else "anchor"
+    hzn_label = "deadline" if d["horizon_is_deadline"] else "EOL horizon"
     lines = [
         f"# price-oracle — {P['label']}",
         "",
@@ -208,13 +216,15 @@ def render_markdown(payload, out_path):
         f"{money(savings) if savings and savings > 0 else 'none'} |",
         f"| Robust street (typical) | {money(ms.get('robust_street'))} |",
         f"| Deal depth vs typical | {money(ms.get('deal_depth'))} |",
-        f"| Fallback cost (substitute + K) | {money(d['fallback_cost'])} |",
-        f"| P(buyable at deadline {d['deadline']}) | {d['p_available_deadline']:.0%} |",
+        f"| Fallback (77\" + K) | {money(d['fallback_cost'])} "
+        f"({sub_src} {money(d['substitute_price'])} + K) |",
+        f"| P(buyable at {hzn_label} {d['horizon_end']}) | {d['p_available_horizon']:.0%} |",
         f"| Next forecast trough | "
         f"{(money(d['trough_price']) + ' on ' + d['trough_date']) if d['trough_price'] else '—'} |",
         f"| P(stockout before trough) | "
         f"{('%.0f%%' % (100*d['p_stockout_before_trough'])) if d['p_stockout_before_trough'] is not None else '—'} |",
         f"| Dominant uncertainty | {d['dominant_driver']} |",
+        f"| Data confidence | {health.get('confidence', '—')} ({health.get('summary', '')}) |",
         f"| Reference-class prior weight | {d['prior_weight']:.0%} (shrinks as live data accrues) |",
         "",
         "## Best legit net price by source (today)",
