@@ -11,7 +11,7 @@ on:
     inputs:
       source:
         description: "fetch mode: mock | live | auto"
-        default: "mock"
+        default: "auto"
       seed_history:
         description: "one-time synthetic backfill before the run (true/false)"
         default: "false"
@@ -46,7 +46,7 @@ jobs:
           PROXY_URL: ${{ secrets.PROXY_URL }}
           ALERT_WEBHOOK_URL: ${{ secrets.ALERT_WEBHOOK_URL }}
         run: |
-          SRC="${{ github.event.inputs.source || 'mock' }}"
+          SRC="${{ github.event.inputs.source || 'auto' }}"
           if [ "${{ github.event.inputs.seed_history }}" = "true" ]; then
             python -m oracle.run --source "$SRC" --seed-history
           else
