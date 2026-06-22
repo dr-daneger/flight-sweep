@@ -1,0 +1,13 @@
+# price-oracle — terminal-clearance price tracker & stopping-policy engine.
+# Lean stack: DuckDB over Parquet (matches the existing analytics stack), numpy
+# /scipy for the models, no server and no CDN. Playwright is the optional last
+# fetch tier; everything else degrades gracefully without it.
+pyyaml>=6.0
+requests>=2.31
+numpy>=1.26
+scipy>=1.11          # curve_fit for the reference-class lifecycle decay
+pandas>=2.0          # frame plumbing between the store and the models
+duckdb>=0.10         # query engine over the date-partitioned Parquet layers
+pyarrow>=14.0        # Parquet IO for the append-only raw/offer layers
+beautifulsoup4>=4.12 # JSON-LD / HTML extraction tiers
+playwright>=1.40     # OPTIONAL last-resort tier for JS-rendered / bot-gated pages

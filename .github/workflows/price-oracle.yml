@@ -1,0 +1,90 @@
+name: price-oracle daily
+
+# Terminal-clearance price tracker. Runs daily, denser through high-event
+# windows (every 6h in late November and around successor-clearance dates) since
+# good prices cause stockouts and dips are missed at low cadence (spec §2.1, §8).
+on:
+  schedule:
+    - cron: "0 9 * * *"          # daily ~2am Pacific
+    - cron: "0 */6 * 11 *"       # every 6h through November (Black Friday window)
+  workflow_dispatch:
+    inputs:
+      source:
+        description: "fetch mode: mock | live | auto"
+        default: "mock"
+      seed_history:
+        description: "one-time synthetic backfill before the run (true/false)"
+        default: "false"
+
+permissions:
+  contents: write
+  issues: write                  # default alert channel = GitHub Issue
+
+concurrency:
+  group: price-oracle
+  cancel-in-progress: false
+
+jobs:
+  oracle:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: price-oracle
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run the daily oracle
+        env:
+          KEEPA_API_KEY: ${{ secrets.KEEPA_API_KEY }}
+          PROXY_URL: ${{ secrets.PROXY_URL }}
+          ALERT_WEBHOOK_URL: ${{ secrets.ALERT_WEBHOOK_URL }}
+        run: |
+          SRC="${{ github.event.inputs.source || 'mock' }}"
+          if [ "${{ github.event.inputs.seed_history }}" = "true" ]; then
+            python -m oracle.run --source "$SRC" --seed-history
+          else
+            python -m oracle.run --source "$SRC"
+          fi
+
+      - name: Open / update alert issue
+        if: always()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const path = 'price-oracle/docs/alert.json';
+            if (!fs.existsSync(path)) return;
+            const alerts = JSON.parse(fs.readFileSync(path, 'utf8'));
+            if (!alerts.length) return;
+            const title = 'price-oracle: ' + alerts.map(a => a.title).join(' · ');
+            const body = alerts.map(a => `**${a.title}**\n\n${a.body}`).join('\n\n---\n\n')
+              + `\n\n_Generated ${new Date().toISOString()} by the price-oracle workflow._`;
+            // Reuse one open tracking issue tagged 'price-oracle' rather than spamming.
+            const { data: open } = await github.rest.issues.listForRepo({
+              owner: context.repo.owner, repo: context.repo.repo,
+              state: 'open', labels: 'price-oracle' });
+            if (open.length) {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner, repo: context.repo.repo,
+                issue_number: open[0].number, body });
+            } else {
+              await github.rest.issues.create({
+                owner: context.repo.owner, repo: context.repo.repo,
+                title, body, labels: ['price-oracle'] });
+            }
+
+      - name: Commit data + outputs
+        run: |
+          git config user.name "price-oracle-bot"
+          git config user.email "actions@users.noreply.github.com"
+          git add data docs
+          git diff --cached --quiet && echo "no changes" && exit 0
+          git commit -m "price-oracle: $(date -u +%F) snapshot"
+          git push
