@@ -138,13 +138,15 @@ def run(mode="mock", on_date=None, do_seed=False, render_only=False):
 
     # ---- models for the primary SKU ---------------------------------------
     primary = cfg["skus_by_key"][primary_key]
+    fallback_key = next((s["sku_key"] for s in cfg["skus"]
+                         if s.get("role") == "fallback"), None)
     history = _load_history(dd, primary_key)
     prior = lifecycle.build_prior(cfg, primary)
     fc = forecast.build(cfg, primary, prior, history, on_date)
     hz = hazard.HazardModel(cfg, primary, history, on_date)
-    ms = sku_state.get(primary_key) or (
-        value.summarize([], primary, cfg))
-    dec = decision.decide(cfg, primary, ms, fc, hz, on_date)
+    ms = sku_state.get(primary_key) or value.summarize([], primary, cfg)
+    sub_state = sku_state.get(fallback_key) if fallback_key else None
+    dec = decision.decide(cfg, primary, ms, fc, hz, on_date, substitute_state=sub_state)
     store.write_table(dd, "decisions", [dec], run_id, on_date)
 
     # ---- forecast / hazard / prediction tables (weekly horizon) -----------
@@ -169,6 +171,7 @@ def run(mode="mock", on_date=None, do_seed=False, render_only=False):
     # ---- validation -------------------------------------------------------
     anomalies = validate.detect_anomalies(sku_offers.get(primary_key, []), ms, cfg)
     calib = validate.score_calibration(cfg, primary_key)
+    health = validate.data_health(cfg, ms, history, fc, on_date)
 
     # ---- payload + outputs ------------------------------------------------
     by_source = sorted(
@@ -192,6 +195,7 @@ def run(mode="mock", on_date=None, do_seed=False, render_only=False):
                           "q50": r["low_q50"], "q75": r["low_q75"], "q95": r["low_q95"],
                           "mean_street": r["mean_street"]} for r in fc_rows],
             "survival": [{"date": d, "S": s} for d, s in zip(plot_dates, surv)],
+            "health": health,
         },
         "watchlist": watchlist,
         "anomalies": anomalies,
@@ -207,10 +211,14 @@ def run(mode="mock", on_date=None, do_seed=False, render_only=False):
     alert.emit(alerts, docs / "alert.json")
 
     bln = f"${dec['best_legit_now']:,.0f}" if dec["best_legit_now"] else "n/a"
+    sub = (f"live 77\" ${dec['substitute_price']:,.0f}" if dec["substitute_is_live"]
+           else f"77\" anchor ${dec['substitute_price']:,.0f}")
+    hzn = ("deadline " if dec["horizon_is_deadline"] else "stockout-bounded horizon ")
     print(f"\nVERDICT {dec['verdict']} — best legit {bln} "
-          f"vs threshold ${dec['threshold']:,.0f}")
-    print(f"  P(buyable at deadline {dec['deadline']}) = {dec['p_available_deadline']:.0%}"
+          f"vs threshold ${dec['threshold']:,.0f} (fallback {sub} + K)")
+    print(f"  P(buyable at {hzn}{dec['horizon_end']}) = {dec['p_available_horizon']:.0%}"
           f" · prior weight {dec['prior_weight']:.0%} · driver: {dec['dominant_driver']}")
+    print(f"  DATA HEALTH: {health['confidence']} — {health['summary']}")
     if anomalies:
         print(f"  {len(anomalies)} data anomaly(ies) flagged")
     print(f"Dashboard: {docs / 'index.html'}")
