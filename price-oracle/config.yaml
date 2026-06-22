@@ -54,7 +54,7 @@ decision:
   # substitute_price + stockout_penalty (K). The 77" S95F is executable new at
   # ~$2,998 today (spec §11.2), so it caps the regret of missing the 83".
   substitute_price: 2998.0
-  stockout_penalty: 400.0         # K (spec §11.3): inconvenience/regret of the
+  stockout_penalty: 800.0         # K (spec §11.3): inconvenience/regret of the
                                   # downgrade to 77" QD-OLED (raised black floor
                                   # in bright rooms, 6" smaller). Tunes BUY
                                   # aggressiveness; higher K => buy sooner.
@@ -120,6 +120,36 @@ storage:
 alerts:
   channel: github_issue
   fire_on: [buy_verdict, threshold_cross, data_anomaly]
+
+# ---------------------------------------------------------------------------
+# Live scrape sources (JSON-LD tier). Populated here so `--source auto` (and
+# the daily workflow) fetches real prices without any code changes. Each entry
+# must name the sku_key it tracks so the runner can route it correctly.
+# Adding a source is purely config; removing one degrades coverage, not
+# correctness — a missing source is logged, not fatal (spec §4.1).
+# ---------------------------------------------------------------------------
+live_sources:
+  # ── 83" S95F (primary buy target) ────────────────────────────────────────
+  - sku_key: samsung_s95f_83
+    source_id: bestbuy_83
+    tier: jsonld
+    url: "https://www.bestbuy.com/site/samsung-83-class-s95f-series-oled-4k-uhd-samsungvision-ai-smart-tizen-tv-2025/6614339.p?skuId=6614339"
+
+  - sku_key: samsung_s95f_83
+    source_id: samsung_com_83
+    tier: jsonld
+    url: "https://www.samsung.com/us/tvs/oled-tv/83-class-oled-tv-s95f-sku-qn83s95faexza/"
+
+  # ── 77" S95F (fallback / substitute price anchor) ────────────────────────
+  - sku_key: samsung_s95f_77
+    source_id: bestbuy_77
+    tier: jsonld
+    url: "https://www.bestbuy.com/site/samsung-77-class-s95f-series-oled-4k-uhd-samsungvision-ai-smart-tizen-tv-2025/6613459.p?skuId=6613459"
+
+  - sku_key: samsung_s95f_77
+    source_id: samsung_com_77
+    tier: jsonld
+    url: "https://www.samsung.com/us/tvs/oled-tv/77-class-oled-tv-s95f-sku-qn77s95fafxza/"
 
 # Paid data (Keepa) and residential proxies are OFF by default (spec §11.5/6):
 # coverage is intentionally partial. Set KEEPA_API_KEY / PROXY_URL secrets and
