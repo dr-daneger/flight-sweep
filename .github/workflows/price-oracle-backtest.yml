@@ -1,0 +1,36 @@
+name: price-oracle backtest
+
+# Weekly walk-forward backtest: replay history to successive cutoffs, forecast
+# forward, score pinball loss + interval coverage, and surface the accuracy
+# trend and the prior-weight shrinkage (spec §7, §10 Phase 3).
+on:
+  schedule:
+    - cron: "0 10 * * 1"        # Mondays
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  backtest:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: price-oracle
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      - name: Run backtest
+        run: python -m oracle.backtest
+      - name: Commit scorecard
+        run: |
+          git config user.name "price-oracle-bot"
+          git config user.email "actions@users.noreply.github.com"
+          git add docs/backtest.md
+          git diff --cached --quiet && echo "no changes" && exit 0
+          git commit -m "price-oracle: backtest scorecard $(date -u +%F)"
+          git push

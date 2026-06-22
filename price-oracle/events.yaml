@@ -1,0 +1,29 @@
+# Exogenous event calendar (spec §2.4). Deterministic future regressors with a
+# characteristic price-pull for premium TVs. Successor milestones are the single
+# largest terminal-phase driver and are encoded as first-class events.
+#
+# type:  holiday | sale | successor_announce | successor_ship | manual
+# pull_pct: typical extra discount depth while active (negative = price drops),
+#           used by the forecaster's event-regression component as a prior mean.
+# sku_scope: "all" or a specific sku_key.
+events:
+  # --- Successor milestones (dominant terminal-phase drivers) ---------------
+  - {name: "S95H announce (CES 2026)", type: successor_announce,
+     start_date: "2026-01-06", end_date: "2026-01-09", pull_pct: -3, sku_scope: all,
+     notes: "Successor unveiled; begins the S95F markdown pressure."}
+  - {name: "S95H ships", type: successor_ship,
+     start_date: "2026-04-15", end_date: "2026-04-15", pull_pct: -6, sku_scope: all,
+     notes: "Successor on shelves; S95F enters active EOL clearance + rising stockout hazard."}
+
+  # --- 2026 retail sale calendar (US) --------------------------------------
+  - {name: "Presidents Day",        type: holiday, start_date: "2026-02-14", end_date: "2026-02-16", pull_pct: -4, sku_scope: all}
+  - {name: "March Madness TV push", type: sale,    start_date: "2026-03-19", end_date: "2026-04-06", pull_pct: -3, sku_scope: all}
+  - {name: "Memorial Day",          type: holiday, start_date: "2026-05-22", end_date: "2026-05-25", pull_pct: -5, sku_scope: all}
+  - {name: "Samsung Discover Spring",type: sale,   start_date: "2026-06-01", end_date: "2026-06-14", pull_pct: -4, sku_scope: all}
+  - {name: "July 4th",              type: holiday, start_date: "2026-07-01", end_date: "2026-07-05", pull_pct: -5, sku_scope: all}
+  - {name: "Amazon Prime Day",      type: sale,    start_date: "2026-07-14", end_date: "2026-07-15", pull_pct: -4, sku_scope: all}
+  - {name: "Back to school",        type: sale,    start_date: "2026-08-01", end_date: "2026-08-31", pull_pct: -3, sku_scope: all}
+  - {name: "Labor Day",             type: holiday, start_date: "2026-09-04", end_date: "2026-09-07", pull_pct: -5, sku_scope: all}
+  - {name: "Samsung Discover Fall", type: sale,    start_date: "2026-10-01", end_date: "2026-10-14", pull_pct: -4, sku_scope: all}
+  - {name: "Black Friday",          type: holiday, start_date: "2026-11-23", end_date: "2026-11-27", pull_pct: -9, sku_scope: all}
+  - {name: "Cyber Monday",          type: holiday, start_date: "2026-11-30", end_date: "2026-11-30", pull_pct: -8, sku_scope: all}

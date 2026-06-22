@@ -1,0 +1,25 @@
+# Reference-class lifecycle priors (spec §6.2, §4.3).
+#
+# A single SKU's terminal phase is short and noisy, so the forecaster borrows
+# strength from the terminal-decay curves of prior-generation analogs aligned on
+# lifecycle time. These analogs seed an informative prior over the S95F's
+# terminal shape; live S95F data then shifts the posterior.
+#
+# SEED DATA, NOT GROUND TRUTH. Each analog is encoded as the parameters of the
+# decay model  M(tau) = floor + premium*exp(-tau/lambda_days)  (tau = days since
+# launch). lifecycle.py expands these into monthly observation points (seeded
+# noise) and fits the model back, so the hierarchy is exercised end to end.
+# Replace with real Keepa / archived street-price histories when KEEPA_API_KEY is
+# set (spec §11.5) — point fit_from_observations at the real series instead.
+groups:
+  oled_83:                         # analogs for the 83" S95F
+    notes: "83\" flagship OLED tier (S95D-83 and the 83\" WOLED lineage)."
+    analogs:
+      - {name: S95D_83, launch_msrp: 6999.99, floor: 3300, premium: 3700, lambda_days: 820, noise_pct: 4}
+      - {name: S90D_83, launch_msrp: 5399.99, floor: 2700, premium: 2700, lambda_days: 780, noise_pct: 5}
+  oled_77:                         # analogs for the 77" S95F (QD-OLED tier)
+    notes: "77\" QD-OLED tier (S95D-77, S95C-77, S95B-77)."
+    analogs:
+      - {name: S95D_77, launch_msrp: 4999.99, floor: 2300, premium: 2700, lambda_days: 560, noise_pct: 4}
+      - {name: S95C_77, launch_msrp: 4499.99, floor: 2000, premium: 2500, lambda_days: 520, noise_pct: 5}
+      - {name: S95B_77, launch_msrp: 4299.99, floor: 1850, premium: 2450, lambda_days: 500, noise_pct: 6}

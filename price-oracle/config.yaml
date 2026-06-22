@@ -1,0 +1,126 @@
+# price-oracle configuration — terminal-clearance price tracker.
+#
+# The seed target is the Samsung 83" S95F (US model QN83S95FAEXZA), a Tandem
+# WOLED panel in active end-of-life clearance. The engine answers one question
+# daily: given the best legitimate net price now, the forecast of future
+# achievable prices, and the probability the SKU vanishes first, BUY / WAIT /
+# WATCH today? See price-oracle/README.md and the build spec for the framing.
+#
+# DECISIONS (spec §11) — defaults chosen here, change freely; they are config,
+# not code. The two policy-dominant ones are `deadline` and `stockout_penalty`.
+
+currency: USD
+
+# ---------------------------------------------------------------------------
+# SKUs to track. The first is the primary buy target; others are watchlist /
+# fallback anchors. condition_scope lists which conditions are BUY-eligible
+# (open-box + returnable used are in scope per spec §11.4); everything else is
+# still logged for price signal but never triggers a BUY.
+# ---------------------------------------------------------------------------
+skus:
+  - sku_key: samsung_s95f_83
+    label: Samsung 83" S95F (QN83S95FAEXZA)
+    role: primary                 # the buy target
+    panel: WOLED
+    launch_msrp: 6499.99
+    launch_date: "2025-03-01"     # S95F lineup launch (lifecycle clock origin)
+    condition_scope: [new, open_box, used, refurb, scratch_dent]
+    reference_class: oled_83      # which analog group seeds the lifecycle prior
+
+  - sku_key: samsung_s95f_77
+    label: Samsung 77" S95F (QN77S95FAFXZA)
+    role: fallback                # resolved primary substitute (spec §11.2)
+    panel: QD-OLED
+    launch_msrp: 4499.99
+    launch_date: "2025-03-01"
+    condition_scope: [new, open_box, used, refurb, scratch_dent]
+    reference_class: oled_77
+
+# ---------------------------------------------------------------------------
+# Decision layer (spec §6.5). The hard override fires the instant any credible,
+# return-safe listing lands at/under hard_buy_trigger, bypassing the model.
+# ---------------------------------------------------------------------------
+decision:
+  primary_sku: samsung_s95f_83
+  hard_buy_trigger: 3000.0        # net <= this on the primary (any in-scope
+                                  # condition passing the §4.4 gates) => BUY now
+  # Patience horizon / purchase deadline (spec §11.1). The new-house move is
+  # mid-July 2026, so the stopping horizon ends here by default. Pushing this
+  # out trades a shot at a deeper EOL trough against rising stockout risk.
+  deadline: "2026-07-15"
+  # Fallback economics: cost of NOT securing the primary before it is gone =
+  # substitute_price + stockout_penalty (K). The 77" S95F is executable new at
+  # ~$2,998 today (spec §11.2), so it caps the regret of missing the 83".
+  substitute_price: 2998.0
+  stockout_penalty: 400.0         # K (spec §11.3): inconvenience/regret of the
+                                  # downgrade to 77" QD-OLED (raised black floor
+                                  # in bright rooms, 6" smaller). Tunes BUY
+                                  # aggressiveness; higher K => buy sooner.
+  mc_paths: 4000                  # Monte-Carlo paths for the stopping policy
+  watch_band_pct: 4.0             # within this % of the BUY threshold => WATCH
+
+# ---------------------------------------------------------------------------
+# Secondary-market BUY gates (spec §4.4). A listing must clear ALL of these to
+# be BUY-eligible; otherwise it is logged for signal only.
+# ---------------------------------------------------------------------------
+secondary_gates:
+  require_returns: true           # free returns / money-back guarantee present
+  min_seller_rating: 0.98         # >= 98% positive
+  min_seller_volume: 50           # established sales history
+
+# ---------------------------------------------------------------------------
+# Value estimator (spec §6.1). Credibility filter rejects implausible lows so a
+# scrape error or a typo'd marketplace listing cannot mis-fire a BUY.
+# ---------------------------------------------------------------------------
+value:
+  mad_k: 3.5                      # reject net < median - k*MAD unless corroborated
+  min_corroboration: 2            # sources agreeing within tol to trust a low
+  corroboration_tol_pct: 3.0
+
+# ---------------------------------------------------------------------------
+# Forecaster (spec §6.3 fallback path). prior_halflife_obs controls how fast
+# the reference-class prior's weight decays as live observations accrue — this
+# is the concrete, auditable form of "improves over time".
+# ---------------------------------------------------------------------------
+forecast:
+  prior_halflife_obs: 30          # live obs at which prior/data weight is 50/50
+  horizon_days: 180               # forecast out to ~6 months past the deadline
+  quantiles: [0.05, 0.25, 0.5, 0.75, 0.95]
+  student_t_df: 4                 # heavy-tailed obs noise, robust to scrape outliers
+
+# ---------------------------------------------------------------------------
+# Stockout / EOL hazard (spec §6.4). Baseline discrete-time hazard rises sharply
+# after the successor ships; live in-stock transitions update it.
+# ---------------------------------------------------------------------------
+hazard:
+  baseline_daily_hazard: 0.001    # pre-successor permanent-EOL hazard per day
+  successor_hazard_mult: 12.0     # multiplier once successor has shipped
+  stockout_low_signal: true       # treat a stockout right after a low as a
+                                  # left-censored "true clearing price <= last seen"
+
+# ---------------------------------------------------------------------------
+# Storage (spec §5.5). DuckDB over date-partitioned Parquet. Persistence target
+# = commit Parquet to this branch (simplest, self-contained, matches how
+# flight-sweep commits its history). The store.py layer is the adapter seam:
+# swapping to an R2/S3 bucket later is a config change here, not a rewrite.
+# ---------------------------------------------------------------------------
+storage:
+  backend: parquet_local
+  data_dir: data                  # relative to price-oracle/
+
+# ---------------------------------------------------------------------------
+# Alerting (spec §9). Default channel = GitHub Issue (in-repo, free); the
+# workflow opens/updates one from the alert.json this job writes. Set
+# ALERT_WEBHOOK_URL to also POST to Slack/Discord/ntfy.
+# ---------------------------------------------------------------------------
+alerts:
+  channel: github_issue
+  fire_on: [buy_verdict, threshold_cross, data_anomaly]
+
+# Paid data (Keepa) and residential proxies are OFF by default (spec §11.5/6):
+# coverage is intentionally partial. Set KEEPA_API_KEY / PROXY_URL secrets and
+# flip these to enable.
+paid_data:
+  keepa: false
+proxy:
+  enabled: false
