@@ -107,7 +107,11 @@ def fetch(sku_key, source_id, query, *, cfg=None, limit=50, proxies=None, timeou
             currency=(it.get("price") or {}).get("currency", "USD"),
             in_stock=True, availability_text="active_listing",
             condition_text=_condition(it),
-            seller_text=seller.get("username"),
+            # Do not persist the seller username -- it is the only eBay user-account
+            # identifier in a listing, and omitting it keeps buy-signal cleanly inside
+            # the Marketplace Account Deletion *exemption* (we store no eBay user data).
+            # The §4.4 gates use only the aggregate, non-identifying trust metrics below.
+            seller_text=None,
             seller_rating=(float(rating) / 100.0 if rating is not None else None),
             seller_volume=seller.get("feedbackScore"),
             returns_ok=None,                  # needs a getItem follow-up (Phase 2)
