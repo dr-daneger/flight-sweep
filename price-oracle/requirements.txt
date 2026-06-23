@@ -10,4 +10,6 @@ pandas>=2.0          # frame plumbing between the store and the models
 duckdb>=0.10         # query engine over the date-partitioned Parquet layers
 pyarrow>=14.0        # Parquet IO for the append-only raw/offer layers
 beautifulsoup4>=4.12 # JSON-LD / HTML extraction tiers
+curl_cffi>=0.7       # real-browser TLS/HTTP2 impersonation: passes fingerprint
+                     # bot-walls (Abt, Slickdeals) a plain client gets 403/503'd on
 playwright>=1.40     # OPTIONAL last-resort tier for JS-rendered / bot-gated pages

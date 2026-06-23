@@ -19,7 +19,10 @@ from .models import MODEL_VERSION, decision, forecast, hazard, lifecycle, value
 
 
 def _run_id():
-    return dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+    # Colon-free, NTFS-safe: this string becomes the Parquet filename and ':' is
+    # illegal on Windows (reserved for drive letters / alternate data streams).
+    # Hyphens keep it lexicographically sortable, which is all the store relies on.
+    return dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H-%M-%S.%fZ")
 
 
 def _market_state_row(ms, sku, on_date, run_id):

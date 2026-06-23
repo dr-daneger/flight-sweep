@@ -23,6 +23,52 @@ def now_utc():
     return dt.datetime.now(dt.timezone.utc)
 
 
+_POLITE_HEADERS = {  # honest, self-identifying; respect rate limits at the caller
+    "User-Agent": "buy-signal/0.1 (+https://github.com/dr-daneger/buy-signal)",
+    "Accept": "text/html,application/xhtml+xml",
+}
+
+
+def http_get(url, *, timeout=20, proxies=None, headers=None):
+    """Fetch `url` honestly first, then escalate to a browser fingerprint.
+
+    Returns (status_code, text); (None, "") if the request could not complete at
+    all. Shared by every HTML/RSS source adapter.
+
+    Many retailers (Abt, Slickdeals, ...) reject a plain Python client with a
+    403/503 keyed on its TLS / HTTP-2 *fingerprint*, not its IP — so we send a
+    polite, self-identifying request first, and only if it is blocked do we retry
+    with curl_cffi, which performs a real Chrome TLS+HTTP2 handshake. Sites gated
+    behind a JS-sensor challenge (Akamai, e.g. Best Buy) still fail both; the
+    caller then degrades to [] (logged, not fatal — spec §4.1).
+    """
+    hdrs = headers or _POLITE_HEADERS
+    # 1) polite, self-identifying
+    try:
+        import requests
+        r = requests.get(url, headers=hdrs, timeout=timeout, proxies=proxies)
+        if r.status_code == 200:
+            return r.status_code, r.text
+        polite = f"HTTP {r.status_code}"
+    except Exception as exc:                  # network down / refused / reset
+        polite = type(exc).__name__
+    # 2) escalate: impersonate a real browser's handshake
+    try:
+        from curl_cffi import requests as creq
+    except ImportError:
+        print(f"  ! blocked ({polite}); curl_cffi not installed to escalate")
+        return None, ""
+    try:
+        kw = {"impersonate": "chrome", "timeout": timeout}
+        if proxies:
+            kw["proxies"] = proxies
+        r = creq.get(url, **kw)
+        return r.status_code, r.text
+    except Exception as exc:
+        print(f"  ! blocked (polite {polite}; impersonate {type(exc).__name__})")
+        return None, ""
+
+
 def make_obs(sku_key, source_id, fetched_at, *, source_url=None, fetch_tier=None,
              http_status=None, raw_price=None, currency="USD", in_stock=None,
              availability_text=None, condition_text=None, seller_text=None,

@@ -23,11 +23,18 @@ def _proxies(cfg):
 def _fetch_live_source(cfg, sku, src, proxies):
     """One live source through its tier ladder; [] (logged) on total failure."""
     tier = src.get("tier", "jsonld")
+    sk, sid = sku["sku_key"], src["source_id"]
     if tier in ("jsonld", "css"):     # css falls through to the jsonld parser today
-        return jsonld.fetch(sku["sku_key"], src["source_id"], src["url"],
-                            proxies=proxies)
+        return jsonld.fetch(sk, sid, src["url"], proxies=proxies)
+    if tier == "slickdeals":          # deal-event capture (RSS); WATCH-only
+        from . import slickdeals
+        return slickdeals.fetch(sk, sid, src.get("query", ""),
+                                size=src.get("size"), proxies=proxies)
+    if tier == "ebay":                # secondary market (Browse API); needs creds
+        from . import ebay
+        return ebay.fetch(sk, sid, src.get("query", ""), cfg=cfg, proxies=proxies)
     # "api" and "headless" are declared seams (spec §4.1); not wired by default.
-    print(f"  ~ {src['source_id']}: tier '{tier}' not implemented, skipping")
+    print(f"  ~ {sid}: tier '{tier}' not implemented, skipping")
     return []
 
 

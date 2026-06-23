@@ -130,10 +130,21 @@ alerts:
 # ---------------------------------------------------------------------------
 live_sources:
   # ── 83" S95F (primary buy target) ────────────────────────────────────────
-  - sku_key: samsung_s95f_83
-    source_id: bestbuy_83
-    tier: jsonld
-    url: "https://www.bestbuy.com/site/samsung-83-class-s95f-series-oled-4k-uhd-samsungvision-ai-smart-tizen-tv-2025/6614339.p?skuId=6614339"
+  - sku_key: samsung_s95f_83     # authorized dealer; in-stock buyable price.
+    source_id: abt_83            # Reached via the curl_cffi escalation in
+    tier: jsonld                 # base.http_get (a plain client gets 403 here).
+    url: "https://www.abt.com/Samsung-OLED-S95F-83-Inch-4K-Vision-AI-Smart-TV-in-Black-QN83S95FAEXZA/p/221536.html"
+
+  - sku_key: samsung_s95f_83     # deal-event capture (WATCH-only; gated out of
+    source_id: slickdeals        # an auto-BUY since the seller is unverified).
+    tier: slickdeals
+    query: "samsung s95f"
+    size: 83
+
+  - sku_key: samsung_s95f_83     # secondary market (open-box/used). Active when
+    source_id: ebay_83           # EBAY_CLIENT_ID / EBAY_CLIENT_SECRET are set.
+    tier: ebay
+    query: "Samsung QN83S95F OLED"
 
   - sku_key: samsung_s95f_83
     source_id: samsung_com_83
@@ -141,15 +152,31 @@ live_sources:
     url: "https://www.samsung.com/us/tvs/oled-tv/83-class-oled-tv-s95f-sku-qn83s95faexza/"
 
   # ── 77" S95F (fallback / substitute price anchor) ────────────────────────
-  - sku_key: samsung_s95f_77
-    source_id: bestbuy_77
+  - sku_key: samsung_s95f_77     # authorized dealer; in-stock buyable price for
+    source_id: abt_77            # the 77" fallback (live substitute anchor).
     tier: jsonld
-    url: "https://www.bestbuy.com/site/samsung-77-class-s95f-series-oled-4k-uhd-samsungvision-ai-smart-tizen-tv-2025/6613459.p?skuId=6613459"
+    url: "https://www.abt.com/Samsung-OLED-S95F-77-Inch-4K-Vision-AI-Smart-TV-in-Black-QN77S95FAFXZA/p/218526.html"
+
+  - sku_key: samsung_s95f_77
+    source_id: slickdeals
+    tier: slickdeals
+    query: "samsung s95f"
+    size: 77
+
+  - sku_key: samsung_s95f_77
+    source_id: ebay_77
+    tier: ebay
+    query: "Samsung QN77S95F OLED"
 
   - sku_key: samsung_s95f_77
     source_id: samsung_com_77
     tier: jsonld
     url: "https://www.samsung.com/us/tvs/oled-tv/77-class-oled-tv-s95f-sku-qn77s95fafxza/"
+
+  # Best Buy / Crutchfield / B&H are intentionally NOT listed: they sit behind a
+  # JS-sensor bot wall (Akamai) that rejects even a real-Chrome TLS fingerprint,
+  # so they need an official API or a headless browser, not a JSON-LD scrape.
+  # Omitted by design -- coverage is partial, not fatal (spec 4.1).
 
 # Paid data (Keepa) and residential proxies are OFF by default (spec §11.5/6):
 # coverage is intentionally partial. Set KEEPA_API_KEY / PROXY_URL secrets and

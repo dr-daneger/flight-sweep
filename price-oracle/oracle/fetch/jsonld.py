@@ -3,17 +3,15 @@
 Parsing schema.org/Product + Offer blocks (JSON-LD) is far more stable than
 CSS-selector scraping and is the preferred tier wherever an official pricing API
 is absent. Any failure returns [] so a broken source never kills a run.
+
+Transport (polite request, then curl_cffi browser-fingerprint fallback) lives in
+base.http_get, so a retailer that 403s a plain client on TLS fingerprint — Abt,
+for instance — is still readable, while a JS-sensor wall (Best Buy/Akamai) simply
+degrades to [].
 """
 import json
 
-import requests
-
-from .base import make_obs, now_utc
-
-_HEADERS = {  # identify politely; respect rate limits at the caller
-    "User-Agent": "price-oracle/0.1 (+https://github.com/dr-daneger/flight-sweep)",
-    "Accept": "text/html,application/xhtml+xml",
-}
+from .base import http_get, make_obs, now_utc
 
 _AVAIL_IN_STOCK = ("instock", "limitedavailability", "onlineonly", "instoreonly",
                    "presale", "preorder")
@@ -24,7 +22,6 @@ _COND_MAP = {
 
 
 def _iter_jsonld(soup):
-    import bs4
     for tag in soup.find_all("script", attrs={"type": "application/ld+json"}):
         try:
             data = json.loads(tag.string or "")
@@ -50,18 +47,14 @@ def _offers_of(node):
 def fetch(sku_key, source_id, url, *, session=None, timeout=20, proxies=None):
     """Fetch `url` and emit one raw observation per schema.org Offer found."""
     from bs4 import BeautifulSoup
-    sess = session or requests.Session()
     fetched = now_utc()
-    try:
-        resp = sess.get(url, headers=_HEADERS, timeout=timeout, proxies=proxies)
-    except requests.RequestException as exc:  # network down / blocked
-        print(f"  ! {source_id} {sku_key}: {type(exc).__name__}: {str(exc)[:80]}")
-        return []
-    if resp.status_code != 200:
-        print(f"  ! {source_id} {sku_key}: HTTP {resp.status_code}")
+    status, text = http_get(url, timeout=timeout, proxies=proxies)
+    if status != 200:
+        if status is not None:
+            print(f"  ! {source_id} {sku_key}: HTTP {status}")
         return []
 
-    soup = BeautifulSoup(resp.text, "html.parser")
+    soup = BeautifulSoup(text, "html.parser")
     out = []
     for node in _iter_jsonld(soup):
         if node.get("@type") not in ("Product", "IndividualProduct"):
@@ -75,7 +68,7 @@ def fetch(sku_key, source_id, url, *, session=None, timeout=20, proxies=None):
             seller = off.get("seller", {})
             out.append(make_obs(
                 sku_key, source_id, fetched, source_url=url, fetch_tier="jsonld",
-                http_status=resp.status_code,
+                http_status=status,
                 raw_price=float(str(price).replace(",", "")),
                 currency=off.get("priceCurrency", "USD"),
                 in_stock=(avail in _AVAIL_IN_STOCK) if avail else None,
