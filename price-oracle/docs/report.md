@@ -1,22 +1,22 @@
 # price-oracle — Samsung 83" S95F (QN83S95FAEXZA)
 
-**WAIT** — Best legit price $4,998 is above the threshold $3,117: the model expects a better achievable price before stockout risk erodes the gain.
+**WAIT** — Best legit price $4,998 is above the threshold $3,122: the model expects a better achievable price before stockout risk erodes the gain.
 
-_Run 2026-06-24 · source auto · 67 day(s) history · model 0.1.0-fallback_
+_Run 2026-06-25 · source auto · 68 day(s) history · model 0.1.0-fallback_
 
 | Metric | Value |
 |---|---|
 | Best legit now | $4,998 (new, abt_83) |
-| BUY threshold (continuation CE) | $3,117 |
-| Expected savings from waiting | $1,881 |
+| BUY threshold (continuation CE) | $3,122 |
+| Expected savings from waiting | $1,876 |
 | Robust street (typical) | $4,998 |
 | Deal depth vs typical | $0 |
-| Fallback (77" + K) | $3,798 (live 77" $2,998 + K) |
-| P(buyable at EOL horizon 2027-04-20) | 3% |
-| Next forecast trough | $3,825 on 2026-11-27 |
+| Fallback (77" + K) | $3,798 (anchor $2,998 + K) |
+| P(buyable at EOL horizon 2027-04-21) | 3% |
+| Next forecast trough | $3,832 on 2026-11-27 |
 | P(stockout before trough) | 85% |
 | Dominant uncertainty | stockout risk |
-| Data confidence | MEDIUM (1 corroborating source(s) today; 67 day(s) history (prior weight 31%); ±32% 30-day forecast band) |
+| Data confidence | MEDIUM (1 corroborating source(s) today; 68 day(s) history (prior weight 31%); ±32% 30-day forecast band) |
 | Reference-class prior weight | 31% (shrinks as live data accrues) |
 
 ## Best legit net price by source (today)
