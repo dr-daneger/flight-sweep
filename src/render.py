@@ -7,12 +7,15 @@ from . import logos
 TEMPLATE = """<!DOCTYPE html>
 <html lang="en">
 <head>
+<script>/* set theme before paint to avoid a flash */(function(){try{var t=localStorage.getItem('fs-theme')||(matchMedia('(prefers-color-scheme: light)').matches?'light':'dark');document.documentElement.setAttribute('data-theme',t);}catch(e){}})();</script>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Flight Sweep — Oct 2026 trip</title>
 <style>
-  :root { --bg:#0f1419; --card:#1a2129; --line:#2b3540; --text:#e6edf3; --dim:#8b9aab;
+  :root { --bg:#0f1419; --card:#1a2129; --line:#2b3540; --line2:#3a4654; --text:#e6edf3; --dim:#8b9aab;
           --accent:#d4a843; --good:#3fb950; --bad:#f85149; --blue:#58a6ff; }
+  :root[data-theme="light"] { --bg:#f6f8fa; --card:#ffffff; --line:#d8dee4; --line2:#c4ccd4;
+          --text:#1f2328; --dim:#5a636d; --accent:#8a6a12; --good:#1a7f37; --bad:#cf222e; --blue:#0969da; }
   * { box-sizing:border-box; }
   body { margin:0; font:15px/1.5 -apple-system,'Segoe UI',Roboto,sans-serif;
          background:var(--bg); color:var(--text); padding:24px; }
@@ -66,7 +69,12 @@ TEMPLATE = """<!DOCTYPE html>
   .alert { border-left:3px solid var(--good); background:var(--card); padding:8px 14px;
            margin-bottom:6px; border-radius:0 8px 8px 0; font-size:14px; }
   .alert.up { border-left-color:var(--bad); }
-  svg.spark { vertical-align:middle; }
+  svg.spark { vertical-align:middle; overflow:visible; }
+  .spark .sd { fill:transparent; cursor:crosshair; }
+  .theme-btn { position:fixed; top:14px; right:16px; z-index:5; width:34px; height:34px;
+               border-radius:8px; border:1px solid var(--line); background:var(--card);
+               color:var(--text); font-size:15px; cursor:pointer; line-height:1; }
+  .theme-btn:hover { border-color:var(--accent); }
   .gf { color:var(--blue); }
   a { color:var(--blue); text-decoration:none; }
   a:hover { text-decoration:underline; }
@@ -76,6 +84,7 @@ TEMPLATE = """<!DOCTYPE html>
 </style>
 </head>
 <body>
+<button id="themeBtn" class="theme-btn" title="Toggle light / dark" aria-label="Toggle theme">☀</button>
 <h1>✈ Flight Sweep <span class="wine">PDX ⇄ DFW ⇄ Europe · Oct 2026</span></h1>
 <div class="sub" id="sub"></div>
 <div id="alerts"></div>
@@ -99,6 +108,7 @@ window.</div>
 <script>
 const D = __DATA__;
 const fmt = n => '$' + Math.round(n).toLocaleString();
+const fT = c => (c == null ? '—' : Math.round(c * 9/5 + 32) + '°F');  // stored °C -> display °F
 // data layer stays 24h (lexicographic window compares need it); display is am/pm
 const ampm = t => {
   if (!t) return '';
@@ -125,10 +135,17 @@ if (D.alerts.length) {
 function spark(series, w=110, h=26) {
   if (!series || series.length < 2) return '<span class="pill">need 2+ sweeps</span>';
   const v = series.map(p => p[1]), min = Math.min(...v), max = Math.max(...v), span = (max-min)||1;
-  const pts = v.map((y,i) => `${(i/(v.length-1)*w).toFixed(1)},${(h-3-(y-min)/span*(h-6)).toFixed(1)}`);
-  const up = v[v.length-1] > v[0];
-  return `<svg class="spark" width="${w}" height="${h}"><polyline points="${pts.join(' ')}" `+
-         `fill="none" stroke="${up?'#f85149':'#3fb950'}" stroke-width="1.8"/></svg>`;
+  const xy = v.map((y,i) => [i/(v.length-1)*w, h-3-(y-min)/span*(h-6)]);
+  const pts = xy.map(([x,y]) => `${x.toFixed(1)},${y.toFixed(1)}`).join(' ');
+  const up = v[v.length-1] > v[0], col = up ? 'var(--bad)' : 'var(--good)';
+  // a dot per sweep, each carrying a native tooltip (date: price); a wider
+  // transparent hit-circle makes the 26px-tall sparkline easy to hover.
+  const dots = xy.map(([x,y],i) =>
+    `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="2" fill="${col}"/>`+
+    `<circle class="sd" cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="6">`+
+    `<title>${mdate(series[i][0])}: ${fmt(series[i][1])}</title></circle>`).join('');
+  return `<svg class="spark" width="${w}" height="${h}">`+
+    `<polyline points="${pts}" fill="none" stroke="${col}" stroke-width="1.8"/>${dots}</svg>`;
 }
 const hkey = (leg,o,d,dt) => [leg,o,d,dt].join('|');
 // offer carried over from an earlier sweep because this one missed the query
@@ -209,7 +226,7 @@ document.getElementById('cards').innerHTML = D.itineraries.map((it,i) => {
       ${legRow('DFW→'+it.code, ta)}
       ${legRow('BOD→PDX', it.home)}
     </div>
-    <div class="meta" title="${it.route}">~${it.weather_c}°C late Oct · ${it.drive_hours}h drive ·
+    <div class="meta" title="${it.route}">~${fT(it.weather_c)} late Oct · ${it.drive_hours}h drive ·
       <span class="route">${it.route}</span></div>
   </div>`;
 }).join('');
@@ -242,6 +259,14 @@ document.getElementById('tbl-ta').innerHTML =
       `<td class="num">${plink(r, `<b>${fmt(r.price)}</b>`)}</td>`+
       `<td class="num gf">${gf?fmt(gf.price):'—'}</td><td>${spark(hist)}</td></tr>`;
   }).join('');
+
+// ---- light / dark toggle (persists; defaults to the OS preference) ----
+const _root = document.documentElement, _tb = document.getElementById('themeBtn');
+const setTheme = t => { _root.setAttribute('data-theme', t);
+  try { localStorage.setItem('fs-theme', t); } catch(e) {}
+  _tb.textContent = t === 'light' ? '☾' : '☀'; };
+setTheme(_root.getAttribute('data-theme') || 'dark');
+_tb.onclick = () => setTheme(_root.getAttribute('data-theme') === 'light' ? 'dark' : 'light');
 </script>
 </body>
 </html>
