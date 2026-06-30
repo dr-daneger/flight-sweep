@@ -1,5 +1,29 @@
 # price-oracle
 
+> **STATUS: FROZEN (2026-06-29).** The daily job is disabled and this subproject is
+> parked. The optimal-stopping engine works; the *data acquisition* is what didn't.
+> The buyable, decision-relevant signal (sub-$3k open-box/used) sits behind bot
+> walls and API gates, while the easily-scraped first-party "new" price is redundant
+> (every dealer clusters within a few dollars). `flight-sweep` (repo root) is
+> unaffected.
+>
+> **Lessons for any price-scraping / tracking project — the durable takeaway:**
+> - Bot walls block on the **client TLS/JS fingerprint, not the IP** — a residential
+>   IP doesn't help. Escalation ladder: `requests` → `curl_cffi` (Chrome
+>   impersonation; beats fingerprint-only blocks, e.g. Abt) → headless + stealth
+>   (for Akamai JS-sensor gates, e.g. Best Buy) → official API → scraping-as-a-service.
+> - **Official APIs carry their own friction:** eBay's production keyset is gated
+>   behind an account-deletion exemption and won't grant sold-price history; Best
+>   Buy's API needs a company-domain email; Keepa's API is paywalled.
+> - **Survivorship bias is fundamental:** the cheapest prices sell out before a daily
+>   poll sees them. Prefer **event/alert streams** (Slickdeals search RSS, Keepa
+>   drop-alerts, eBay saved-search) over polling for trough detection.
+> - For a single SKU, free alerts + the occasional manual check usually beat a
+>   custom engine on ROI. Build it for the learning, with a thin spine of
+>   *cooperative* sources rather than "scrape everything."
+>
+> To revive: `schtasks /Change /TN buy-signal-daily /ENABLE`.
+
 A terminal-clearance **price tracker and stopping-policy engine**. It scrapes a
 SKU's price on a schedule and publishes a daily, defensible **BUY / WAIT / WATCH**
 verdict to a self-contained dashboard — framed not as "a price chart" but as a
