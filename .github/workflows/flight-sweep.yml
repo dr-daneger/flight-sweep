@@ -1,8 +1,6 @@
 name: flight price sweep
 
 on:
-  schedule:
-    - cron: "0 14 * * *"   # daily ~7am Pacific; runs only from the default branch
   workflow_dispatch:
     inputs:
       spot_check:

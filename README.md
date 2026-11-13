@@ -1,111 +1,84 @@
 # flight-sweep
 
-Automated price tracking + itinerary optimization for the October 2026 Bordeaux
-wedding trip, so nobody has to brute-force Google Flights by hand.
+A daily fare tracker and multi-leg itinerary optimizer for one family trip in October 2026.
+The trip has passed and tracking has stopped. This repository is kept as a retrospective.
 
-## The trip
+Live dashboard (frozen on the last sweep before the trip, 2026-10-07):
+https://dr-daneger.github.io/flight-sweep/
 
-| Leg | Route | Date(s) | Hard constraint |
-|---|---|---|---|
-| Outbound | PDX → DFW | Oct 8 or 9 | Oct 8 departs ≥17:00; Oct 9 departs ≤18:00 (Dallas wedding Oct 10) |
-| Transatlantic | DFW → **entry city X** | Oct 11 or 12 | the optimizer's variables |
-| Road trip | X → ... → Bordeaux | Oct 11/12–24 | one-way rental van, dropped at BOD |
-| Home | BOD → PDX | Oct 25 or 26 | Oct 25 departs ≥17:00 (Bordeaux wedding Oct 24–25) |
+## What it did
 
-Departure-time windows are **enforced when fetching** (`dep_after`/`dep_before`
-per date in `config.yaml`); out-of-window fares never enter the rankings.
-Offers whose source lacks departure-time data are kept but marked "?" on the
-dashboard.
+The trip had 3 priced flight legs and a road trip in the middle:
 
-5 seats: 2 adults + 3 children (set real ages in `config.yaml` — kids 12+ price
-as adults).
+1. Home airport to Dallas (DFW), 2 candidate dates.
+2. Dallas to a European entry city, 2 candidate dates. The entry city was the free choice, out of 12 candidates.
+3. Bordeaux (BOD) back home, 2 candidate dates.
 
-## Why this isn't NP-hard
+A one-way rental van covered everything between the entry city and Bordeaux.
 
-It looks like a traveling-salesman mess, but the van rental collapses it:
-flights are only needed at three fixed cut points, and the only free choice is
-the Europe entry city (plus ±1 day on two legs). Total cost is *separable* —
-`best(PDX→DFW) + best(DFW→X) + best(BOD→PDX) + vanDropFee(X)` — so the global
-optimum is a simple minimum over ~12 candidate cities × a few dates ≈ 16 fare
-queries per sweep. The hard part isn't the optimization, it's having fresh
-fares every day, which is what this tool automates.
+Each day a GitHub Actions job fetched fares for every leg, date and entry city (28 queries per sweep).
+It stored every offer in a SQLite database, ranked the full itineraries, and published a static dashboard to GitHub Pages.
+The dashboard showed ranked itineraries, price moves of 5% or more since the previous sweep, per-leg price history, and a deep link from every price to the matching Google Flights search.
+It recorded 122 sweeps before the trip.
 
-Entry cities are pre-filtered for late-October weather (Mediterranean-leaning)
-and drivability to Bordeaux in ~12 days; each carries a rough one-way van
-drop-fee estimate (France ≈ free, cross-border often €500–900) that folds into
-the ranking. Edit `entry_cities` in `config.yaml` to add/remove candidates.
+## Engineering points
 
-## Usage
+**The itinerary problem is separable, not a traveling-salesman search.**
+The van removes all routing inside Europe, so flights are needed only at 3 fixed cut points.
+Total cost is `best(leg 1) + best(Dallas to X) + best(leg 3) + van drop fee(X)`.
+Each term is minimized on its own, so the global optimum is a minimum over 12 cities.
+No combinatorial search is needed (`src/optimizer.py`).
+
+**Multi-source fallback with stale-price flagging.**
+Each query tries its sources in order and stops at the first that returns offers (`fetch_all` in `src/sweep.py`).
+With API keys present, the Amadeus flight-offers API is primary and a Google Flights scraper backfills empty results.
+Without keys, the scraper runs the whole sweep.
+The scraper itself tries a plain page fetch first, then a headless Chromium browser for routes the lite page will not render (`src/gflights.py`).
+Any failure degrades to "no data for that query" instead of a failed sweep.
+When a sweep misses a query, the ranking reuses the freshest earlier compliant price and marks it stale on the dashboard (`latest_offers` in `src/store.py`).
+
+**Constraints applied at fetch time.**
+Departure-time windows and per-leg stop limits are read from `config.yaml` and applied inside each source, before offers are truncated to the cheapest 5 (`src/timewin.py`, `src/gflights.py`, `src/amadeus_client.py`).
+Out-of-window fares never enter the database.
+Offers whose time or stop count is unknown are kept and marked on the dashboard.
+Stop limits are checked again at ranking time, where an unknown stop count does not rank.
+
+## Running it
 
 ```bash
 pip install -r requirements.txt
-
-# real prices immediately, no API keys: full sweep via Google Flights scraper
-python -m src.sweep
-
-# with free Amadeus keys (developers.amadeus.com), Amadeus becomes primary and
-# the scraper automatically backfills any query Amadeus returns empty
-export AMADEUS_CLIENT_ID=... AMADEUS_CLIENT_SECRET=...
-python -m src.sweep --spot-check 3   # + cross-check top 3 cities against GF
-
+python -m playwright install chromium
+python -m src.sweep                  # Amadeus if keys are set, else the Google Flights scraper
 python -m src.sweep --mock           # generated fares, for development
+python -m src.sweep --render-only    # rebuild the dashboard from the stored database
 ```
 
-Each sweep appends to `data/prices.sqlite` and regenerates
-`docs/index.html` — a single self-contained file (open it directly, no
-server needed) showing:
-
-- ranked itineraries per entry city (flights + van fee, weather, drive time, route idea)
-- **every price is a deep link** opening that exact Google Flights search
-  (airports, date, all 5 travelers) for one-click verification/booking
-- price-move alerts ≥5% since the previous sweep
-- per-leg detail with history sparklines and time-window verification flags
-- Google Flights cross-check column where available
-
-## Data sources
-
-Hybrid, in order of trust:
-
-- **Amadeus Self-Service API** (primary when keys exist): free tier ~2k
-  calls/month; a daily sweep uses ~16. Test-environment fares can differ
-  slightly from retail — treat them as ranking/trend signal.
-- **fast-flights** (backup + spot-check): unofficial Google Flights scraper.
-  In `--source auto` it backfills any query Amadeus returns empty, runs the
-  whole sweep when no keys are set, and powers `--spot-check N`
-  (stored separately as `gflights-check` so it never pollutes the ranking
-  data). Per query it tries a plain HTTP fetch first, then its own headless
-  Chromium (`playwright install chromium`) for routes the lite page won't
-  render — smaller airports like BOD/LIS/NCE need this. Every failure
-  degrades to "no data for that query" instead of a failed sweep, and the
-  optimizer reuses the freshest prior price (flagged *stale* on the
-  dashboard) for anything a sweep missed. Google Flights shows the **party
-  total**, recorded as-is. Behind a TLS-intercepting proxy, set
-  `GFLIGHTS_INSECURE_TLS=1` to let the local browser accept the proxy cert.
-- **Always verify the winning fare manually before booking.**
-
-## Daily automation
-
-`.github/workflows/flight-sweep.yml` (repo root) runs a sweep every day at
-14:00 UTC and commits the updated database + dashboard. Setup:
-
-1. Repo → Settings → Secrets and variables → Actions: add
-   `AMADEUS_CLIENT_ID` and `AMADEUS_CLIENT_SECRET`.
-2. Scheduled workflows only fire from the **default branch** — merge this to
-   `main` to start the daily cadence. Until then, trigger manually via
-   Actions → "flight price sweep" → Run workflow.
-3. History accrues in git; sparklines get useful after ~5 sweeps.
+Amadeus keys go in the `AMADEUS_CLIENT_ID` and `AMADEUS_CLIENT_SECRET` environment variables.
+The workflow in `.github/workflows/flight-sweep.yml` now runs only when triggered by hand.
+A manual run overwrites the frozen dashboard with a new sweep.
 
 ## Layout
 
 ```
-config.yaml          trip dates, travelers, entry-city candidates + van fees
-src/sweep.py         CLI orchestrator (fetch → store → optimize → render)
-src/amadeus_client.py  Amadeus Flight Offers Search wrapper
-src/gflights.py      Google Flights search source (backup + spot-check)
-src/mock_fares.py    keyless plausible fares for development
-src/store.py         SQLite fare-snapshot history
-src/optimizer.py     itinerary assembly, ranking, price-move alerts
-src/render.py        static dashboard generator
-data/prices.sqlite   accumulated price history (committed on purpose)
-docs/index.html      generated dashboard
+config.yaml            legs, dates, time windows, stop limits, entry-city candidates
+src/sweep.py           command-line entry point: fetch, store, optimize, render
+src/amadeus_client.py  Amadeus flight-offers source
+src/gflights.py        Google Flights scraper source
+src/timewin.py         shared time-window and stop-limit filters
+src/store.py           SQLite fare history and stale fallback
+src/optimizer.py       itinerary assembly, ranking, price-move alerts
+src/render.py          static dashboard generator
+data/prices.sqlite     full fare history
+docs/index.html        dashboard served by GitHub Pages
 ```
+
+## Limits
+
+- No automated tests.
+- The Google Flights source is an unofficial scraper and breaks when the page changes.
+- Van drop fees and drive times are rough hand estimates.
+- Prices are from 2026 and are no longer bookable.
+
+## Authorship
+
+Designed and specified by the owner; built by directing AI coding agents.
